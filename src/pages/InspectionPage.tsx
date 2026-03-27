@@ -1,8 +1,11 @@
-import { useEffect, useState, useCallback } from 'react';
-import { supabase } from '../lib/supabase';
+import { useState } from 'react';
 import { useAuth } from '../contexts/AuthContext';
-import type { InspectionSession, InspectionLine, ProductStyle, Customer, Factory, OrderLot } from '../lib/database.types';
+import type { InspectionSession, InspectionLine, SessionStatus } from '../lib/database.types';
 import { SESSION_STATUS_LABELS, SESSION_STATUS_COLORS } from '../lib/database.types';
+import {
+  MOCK_INSPECTION_SESSIONS, MOCK_INSPECTION_LINES_MAP,
+  MOCK_PRODUCT_STYLES, MOCK_CUSTOMERS, MOCK_FACTORIES, MOCK_ORDER_LOTS,
+} from '../lib/mock-data';
 import { calcSessionSummary, isDefectRateHigh, formatDefectRate } from '../services/inspection-calc';
 import { getAllowedTransitions, logApproval, logAudit } from '../services/approval';
 import { Modal } from '../components/ui/Modal';
@@ -12,105 +15,94 @@ import { ClipboardCheck, Plus, Search, ChevronRight, AlertTriangle, CheckCircle2
 import { SessionEditor } from './inspection/SessionEditor';
 
 interface SessionRow extends InspectionSession {
-  product_style: ProductStyle & { customer: Customer; factory: Factory };
-  order_lot?: OrderLot;
+  style_code: string;
+  customer_name: string;
+  factory_code: string;
   lines: InspectionLine[];
 }
 
-interface CreateFormState {
-  product_style_id: string;
-  order_lot_id: string;
-  inspection_date: string;
-  notes: string;
-}
+const todayStr = () => new Date().toISOString().split('T')[0];
 
-const today = () => new Date().toISOString().split('T')[0];
+function buildSessions(sessions: InspectionSession[]): SessionRow[] {
+  return sessions.map(s => {
+    const style = MOCK_PRODUCT_STYLES.find(p => p.id === s.product_style_id);
+    const cust = MOCK_CUSTOMERS.find(c => c.id === s.customer_id);
+    const fac = MOCK_FACTORIES.find(f => f.id === s.factory_id);
+    return {
+      ...s,
+      style_code: style?.style_code ?? '',
+      customer_name: cust?.name ?? '',
+      factory_code: fac?.code ?? '',
+      lines: MOCK_INSPECTION_LINES_MAP[s.id] ?? [],
+    };
+  });
+}
 
 export default function InspectionPage() {
   const { user, role } = useAuth();
-  const [sessions, setSessions] = useState<SessionRow[]>([]);
-  const [styles, setStyles] = useState<(ProductStyle & { customer: Customer; factory: Factory })[]>([]);
-  const [lots, setLots] = useState<OrderLot[]>([]);
-  const [loading, setLoading] = useState(true);
+  const [sessions, setSessions] = useState<SessionRow[]>(buildSessions(MOCK_INSPECTION_SESSIONS));
   const [search, setSearch] = useState('');
   const [filterStatus, setFilterStatus] = useState('');
   const [showCreateModal, setShowCreateModal] = useState(false);
-  const [createForm, setCreateForm] = useState<CreateFormState>({ product_style_id: '', order_lot_id: '', inspection_date: today(), notes: '' });
-  const [creating, setCreating] = useState(false);
+  const [createForm, setCreateForm] = useState({ product_style_id: '', order_lot_id: '', inspection_date: todayStr(), notes: '' });
   const [createError, setCreateError] = useState('');
   const [openSessionId, setOpenSessionId] = useState<string | null>(null);
 
-  const load = useCallback(async () => {
-    setLoading(true);
-    const [{ data: sessData }, { data: linesData }, { data: stylesData }, { data: lotsData }] = await Promise.all([
-      supabase.from('inspection_sessions').select('*, product_styles!inner(*, customers!inner(*), factories!inner(*)), order_lots(*)').is('deleted_at', null).order('inspection_date', { ascending: false }),
-      supabase.from('inspection_lines').select('*'),
-      supabase.from('product_styles').select('*, customers!inner(*), factories!inner(*)').eq('active', true).order('style_code'),
-      supabase.from('order_lots').select('*').eq('status', 'active').order('created_at', { ascending: false }),
-    ]);
-    const lineMap: Record<string, InspectionLine[]> = {};
-    (linesData ?? []).forEach((l: any) => {
-      if (!lineMap[l.session_id]) lineMap[l.session_id] = [];
-      lineMap[l.session_id].push(l);
-    });
-    setStyles((stylesData ?? []).map((s: any) => ({ ...s, customer: s.customers, factory: s.factories })));
-    setLots(lotsData ?? []);
-    setSessions((sessData ?? []).map((s: any) => ({
-      ...s,
-      product_style: { ...s.product_styles, customer: s.product_styles.customers, factory: s.product_styles.factories },
-      order_lot: s.order_lots ?? undefined,
-      lines: lineMap[s.id] ?? [],
-    })));
-    setLoading(false);
-  }, []);
-
-  useEffect(() => { load(); }, [load]);
-
-  const createSession = async () => {
+  const createSession = () => {
     if (!createForm.product_style_id) { setCreateError('Vui lòng chọn mã hàng'); return; }
     if (!createForm.inspection_date) { setCreateError('Vui lòng chọn ngày kiểm'); return; }
-    setCreating(true); setCreateError('');
-    const style = styles.find(s => s.id === createForm.product_style_id)!;
-    const { data, error: e } = await supabase.from('inspection_sessions').insert({
+    const style = MOCK_PRODUCT_STYLES.find(s => s.id === createForm.product_style_id)!;
+    const newSession: InspectionSession = {
+      id: `session-${Date.now()}`,
+      report_no: null,
       product_style_id: createForm.product_style_id,
       order_lot_id: createForm.order_lot_id || null,
       customer_id: style.customer_id,
       factory_id: style.factory_id,
+      template_id: null,
       inspection_date: createForm.inspection_date,
-      notes: createForm.notes.trim(),
+      inspector_id: user?.id ?? null,
+      supervisor_id: null,
       status: 'draft',
+      submitted_at: null, submitted_by: null,
+      approved_at: null, approved_by: null,
+      locked_at: null, locked_by: null,
+      rejected_at: null, rejected_by: null,
+      reject_reason: '',
+      notes: createForm.notes,
+      deleted_at: null,
+      created_at: new Date().toISOString(),
+      updated_at: new Date().toISOString(),
       created_by: user?.id ?? null,
-    }).select().single();
-    if (e) { setCreateError(e.message); setCreating(false); return; }
+      updated_by: null,
+    };
+    setSessions(prev => [buildSessions([newSession])[0], ...prev]);
     setShowCreateModal(false);
-    await load();
-    if (data) setOpenSessionId(data.id);
-    setCreating(false);
+    setOpenSessionId(newSession.id);
   };
 
-  const handleTransition = async (session: SessionRow, toStatus: string) => {
-    if (!role || !user) return;
+  const handleTransition = (sessionId: string, toStatus: string) => {
     const reason = toStatus === 'rejected' ? (prompt('Lý do từ chối:') ?? '') : undefined;
     const now = new Date().toISOString();
-    const update: Record<string, unknown> = { status: toStatus, updated_by: user.id };
-    if (toStatus === 'submitted') { update.submitted_at = now; update.submitted_by = user.id; }
-    if (toStatus === 'approved') { update.approved_at = now; update.approved_by = user.id; }
-    if (toStatus === 'locked') { update.locked_at = now; update.locked_by = user.id; }
-    if (toStatus === 'rejected') { update.rejected_at = now; update.rejected_by = user.id; update.reject_reason = reason ?? ''; }
-    if (toStatus === 'draft') { update.reject_reason = ''; }
-    const { error: e } = await supabase.from('inspection_sessions').update(update).eq('id', session.id);
-    if (!e) {
-      await logApproval('inspection_sessions', session.id, session.status, toStatus, user.id, reason);
-      await logAudit(user.id, 'status_change', 'inspection_sessions', session.id, { status: session.status }, { status: toStatus, reason });
-      load();
-    }
+    setSessions(prev => prev.map(s => {
+      if (s.id !== sessionId) return s;
+      const upd: Partial<InspectionSession> = { status: toStatus as SessionStatus, updated_by: user?.id ?? null };
+      if (toStatus === 'submitted') { upd.submitted_at = now; upd.submitted_by = user?.id ?? null; }
+      if (toStatus === 'approved') { upd.approved_at = now; upd.approved_by = user?.id ?? null; }
+      if (toStatus === 'locked') { upd.locked_at = now; upd.locked_by = user?.id ?? null; }
+      if (toStatus === 'rejected') { upd.rejected_at = now; upd.rejected_by = user?.id ?? null; upd.reject_reason = reason ?? ''; }
+      if (toStatus === 'draft') { upd.reject_reason = ''; }
+      logApproval('inspection_sessions', s.id, s.status, toStatus, user?.id ?? '');
+      logAudit(user?.id ?? '', 'status_change', 'inspection_sessions', s.id, { status: s.status }, { status: toStatus });
+      return { ...s, ...upd };
+    }));
   };
 
-  const filteredLots = lots.filter(l => !createForm.product_style_id || l.product_style_id === createForm.product_style_id);
+  const filteredLots = MOCK_ORDER_LOTS.filter(l => !createForm.product_style_id || l.product_style_id === createForm.product_style_id);
 
   const filtered = sessions.filter(s => {
     const q = search.toLowerCase();
-    const matchQ = !q || s.product_style.style_code.toLowerCase().includes(q) || (s.report_no ?? '').toLowerCase().includes(q) || s.product_style.customer.name.toLowerCase().includes(q);
+    const matchQ = !q || s.style_code.toLowerCase().includes(q) || (s.report_no ?? '').toLowerCase().includes(q) || s.customer_name.toLowerCase().includes(q);
     const matchS = !filterStatus || s.status === filterStatus;
     return matchQ && matchS;
   });
@@ -118,11 +110,19 @@ export default function InspectionPage() {
   if (openSessionId) {
     const session = sessions.find(s => s.id === openSessionId);
     if (session) {
+      const style = MOCK_PRODUCT_STYLES.find(p => p.id === session.product_style_id)!;
+      const cust = MOCK_CUSTOMERS.find(c => c.id === session.customer_id)!;
+      const fac = MOCK_FACTORIES.find(f => f.id === session.factory_id)!;
+      const sessionWithRelations = {
+        ...session,
+        product_style: { ...style, customer: cust, factory: fac },
+        order_lot: MOCK_ORDER_LOTS.find(l => l.id === session.order_lot_id),
+      };
       return (
         <SessionEditor
-          session={session}
-          onBack={() => { setOpenSessionId(null); load(); }}
-          onTransition={(toStatus) => handleTransition(session, toStatus)}
+          session={sessionWithRelations as any}
+          onBack={() => setOpenSessionId(null)}
+          onTransition={(toStatus) => { handleTransition(session.id, toStatus); setOpenSessionId(null); }}
           role={role}
           userId={user?.id ?? null}
         />
@@ -160,7 +160,7 @@ export default function InspectionPage() {
         </select>
         {(role === 'staff' || role === 'leader' || role === 'manager') && (
           <button
-            onClick={() => { setCreateForm({ product_style_id: '', order_lot_id: '', inspection_date: today(), notes: '' }); setCreateError(''); setShowCreateModal(true); }}
+            onClick={() => { setCreateForm({ product_style_id: '', order_lot_id: '', inspection_date: todayStr(), notes: '' }); setCreateError(''); setShowCreateModal(true); }}
             className="flex items-center gap-2 px-4 py-2.5 bg-blue-600 hover:bg-blue-700 text-white text-sm font-medium rounded-xl transition-colors shrink-0"
           >
             <Plus className="w-4 h-4" /> Tạo phiếu
@@ -168,9 +168,7 @@ export default function InspectionPage() {
         )}
       </div>
 
-      {loading ? (
-        <div className="space-y-2">{[...Array(4)].map((_, i) => <div key={i} className="h-20 bg-slate-100 rounded-xl animate-pulse" />)}</div>
-      ) : filtered.length === 0 ? (
+      {filtered.length === 0 ? (
         <div className="py-16 text-center"><ClipboardCheck className="w-10 h-10 text-slate-200 mx-auto mb-2" /><p className="text-slate-400 text-sm">Chưa có phiếu kiểm nào</p></div>
       ) : (
         <div className="space-y-2">
@@ -186,7 +184,7 @@ export default function InspectionPage() {
                     <div className="mt-0.5">{statusIcons[s.status]}</div>
                     <div className="flex-1 min-w-0">
                       <div className="flex items-center gap-2 flex-wrap">
-                        <span className="font-bold text-slate-900 text-sm">{s.product_style.style_code}</span>
+                        <span className="font-bold text-slate-900 text-sm">{s.style_code}</span>
                         {s.report_no && <span className="text-slate-400 text-xs font-mono">{s.report_no}</span>}
                         <span className={`px-2 py-0.5 rounded-full text-xs font-medium ${SESSION_STATUS_COLORS[s.status]}`}>
                           {SESSION_STATUS_LABELS[s.status]}
@@ -198,7 +196,7 @@ export default function InspectionPage() {
                         )}
                       </div>
                       <div className="flex items-center gap-2 mt-1 text-xs text-slate-400 flex-wrap">
-                        <span>{s.product_style.customer.name}</span>
+                        <span>{s.customer_name}</span>
                         <span>·</span>
                         <span>{new Date(s.inspection_date).toLocaleDateString('vi-VN')}</span>
                         {s.lines.length > 0 && (
@@ -214,7 +212,7 @@ export default function InspectionPage() {
                     {transitions.map(t => (
                       <button
                         key={t.to}
-                        onClick={() => handleTransition(s, t.to)}
+                        onClick={() => handleTransition(s.id, t.to)}
                         className={`px-3 py-1.5 text-xs font-medium rounded-lg transition-colors ${
                           t.to === 'rejected' ? 'bg-red-50 text-red-700 hover:bg-red-100'
                           : t.to === 'locked' ? 'bg-green-50 text-green-700 hover:bg-green-100'
@@ -240,7 +238,10 @@ export default function InspectionPage() {
             <FormField label="Mã hàng" required>
               <select className={selectClass} value={createForm.product_style_id} onChange={e => setCreateForm(f => ({ ...f, product_style_id: e.target.value, order_lot_id: '' }))}>
                 <option value="">Chọn mã hàng</option>
-                {styles.map(s => <option key={s.id} value={s.id}>{s.style_code} — {s.customer.name}</option>)}
+                {MOCK_PRODUCT_STYLES.filter(s => s.active).map(s => {
+                  const c = MOCK_CUSTOMERS.find(c => c.id === s.customer_id);
+                  return <option key={s.id} value={s.id}>{s.style_code} — {c?.name}</option>;
+                })}
               </select>
             </FormField>
             <FormField label="Order Lot (tuỳ chọn)">
@@ -257,7 +258,7 @@ export default function InspectionPage() {
             </FormField>
             <div className="flex gap-3 pt-2">
               <button onClick={() => setShowCreateModal(false)} className="flex-1 py-2.5 border border-slate-200 text-slate-600 rounded-xl text-sm font-medium hover:bg-slate-50">Hủy</button>
-              <button onClick={createSession} disabled={creating} className="flex-1 py-2.5 bg-blue-600 hover:bg-blue-700 disabled:bg-blue-400 text-white rounded-xl text-sm font-medium">{creating ? 'Đang tạo...' : 'Tạo phiếu'}</button>
+              <button onClick={createSession} className="flex-1 py-2.5 bg-blue-600 hover:bg-blue-700 text-white rounded-xl text-sm font-medium">Tạo phiếu</button>
             </div>
           </div>
         </Modal>

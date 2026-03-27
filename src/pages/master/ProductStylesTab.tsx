@@ -1,11 +1,13 @@
-import { useEffect, useState, useCallback } from 'react';
-import { supabase } from '../../lib/supabase';
+import { useState } from 'react';
 import { useAuth } from '../../contexts/AuthContext';
 import type { ProductStyle, Customer, Factory, ProductTypeRecord } from '../../lib/database.types';
+import {
+  MOCK_PRODUCT_STYLES, MOCK_CUSTOMERS, MOCK_FACTORIES, MOCK_PRODUCT_TYPES,
+} from '../../lib/mock-data';
 import { Modal } from '../../components/ui/Modal';
 import { FormField, inputClass, selectClass } from '../../components/ui/FormField';
 import { ErrorAlert } from '../../components/ui/ErrorAlert';
-import { Package, Plus, Search, CreditCard as Edit2, ToggleLeft, ToggleRight, AlertCircle } from 'lucide-react';
+import { Package, Plus, Search, CreditCard as Edit2, ToggleLeft, ToggleRight } from 'lucide-react';
 
 interface StyleRow extends ProductStyle {
   customer: Customer;
@@ -23,72 +25,64 @@ interface FormState {
 
 const empty: FormState = { style_code: '', name: '', customer_id: '', factory_id: '', product_type_id: '' };
 
+function buildRows(styles: ProductStyle[]): StyleRow[] {
+  return styles.map(s => ({
+    ...s,
+    customer: MOCK_CUSTOMERS.find(c => c.id === s.customer_id) ?? MOCK_CUSTOMERS[0],
+    factory: MOCK_FACTORIES.find(f => f.id === s.factory_id) ?? MOCK_FACTORIES[0],
+    product_type: MOCK_PRODUCT_TYPES.find(t => t.id === s.product_type_id) ?? MOCK_PRODUCT_TYPES[0],
+  }));
+}
+
 export function ProductStylesTab() {
   const { isManager } = useAuth();
-  const [rows, setRows] = useState<StyleRow[]>([]);
-  const [customers, setCustomers] = useState<Customer[]>([]);
-  const [factories, setFactories] = useState<Factory[]>([]);
-  const [productTypes, setProductTypes] = useState<ProductTypeRecord[]>([]);
-  const [loading, setLoading] = useState(true);
+  const [rows, setRows] = useState<StyleRow[]>(buildRows(MOCK_PRODUCT_STYLES));
   const [search, setSearch] = useState('');
   const [showModal, setShowModal] = useState(false);
   const [editId, setEditId] = useState<string | null>(null);
   const [form, setForm] = useState<FormState>(empty);
-  const [saving, setSaving] = useState(false);
   const [error, setError] = useState('');
-
-  const load = useCallback(async () => {
-    setLoading(true);
-    const [{ data: styles }, { data: custs }, { data: facts }, { data: types }] = await Promise.all([
-      supabase.from('product_styles').select(`
-        *,
-        customers!inner(id, code, name, name_jp, currency, is_active, created_at, updated_at, created_by),
-        factories!inner(id, code, name, name_jp, country, is_active, created_at, updated_at, created_by),
-        product_types!inner(id, code, name, name_jp)
-      `).order('created_at', { ascending: false }),
-      supabase.from('customers').select('*').eq('is_active', true),
-      supabase.from('factories').select('*').eq('is_active', true),
-      supabase.from('product_types').select('*'),
-    ]);
-    setCustomers((custs ?? []) as Customer[]);
-    setFactories((facts ?? []) as Factory[]);
-    setProductTypes((types ?? []) as ProductTypeRecord[]);
-    setRows((styles ?? []).map((s: any) => ({
-      ...s,
-      customer: s.customers,
-      factory: s.factories,
-      product_type: s.product_types,
-    })));
-    setLoading(false);
-  }, []);
-
-  useEffect(() => { load(); }, [load]);
 
   const openCreate = () => { setEditId(null); setForm(empty); setError(''); setShowModal(true); };
   const openEdit = (r: StyleRow) => {
     setEditId(r.id);
     setForm({ style_code: r.style_code, name: r.name, customer_id: r.customer_id, factory_id: r.factory_id, product_type_id: r.product_type_id });
-    setError('');
-    setShowModal(true);
+    setError(''); setShowModal(true);
   };
 
-  const save = async () => {
+  const save = () => {
     if (!form.style_code.trim()) { setError('Vui lòng nhập mã hàng'); return; }
     if (!form.customer_id) { setError('Vui lòng chọn khách hàng'); return; }
     if (!form.factory_id) { setError('Vui lòng chọn nhà máy'); return; }
     if (!form.product_type_id) { setError('Vui lòng chọn loại sản phẩm'); return; }
-    setSaving(true); setError('');
-    const payload = { style_code: form.style_code.trim().toUpperCase(), name: form.name.trim(), customer_id: form.customer_id, factory_id: form.factory_id, product_type_id: form.product_type_id };
-    const { error: e } = editId
-      ? await supabase.from('product_styles').update(payload).eq('id', editId)
-      : await supabase.from('product_styles').insert(payload);
-    if (e) setError(e.message);
-    else { setShowModal(false); load(); }
-    setSaving(false);
+    const id = editId ?? `style-${Date.now()}`;
+    const payload: ProductStyle = {
+      id,
+      style_code: form.style_code.trim().toUpperCase(),
+      name: form.name.trim(),
+      customer_id: form.customer_id,
+      factory_id: form.factory_id,
+      product_type_id: form.product_type_id,
+      active: true,
+      created_at: new Date().toISOString(),
+      updated_at: new Date().toISOString(),
+      created_by: 'user-001',
+    };
+    const newRow: StyleRow = {
+      ...payload,
+      customer: MOCK_CUSTOMERS.find(c => c.id === payload.customer_id)!,
+      factory: MOCK_FACTORIES.find(f => f.id === payload.factory_id)!,
+      product_type: MOCK_PRODUCT_TYPES.find(t => t.id === payload.product_type_id)!,
+    };
+    if (editId) {
+      setRows(prev => prev.map(r => r.id === editId ? { ...r, ...newRow } : r));
+    } else {
+      setRows(prev => [newRow, ...prev]);
+    }
+    setShowModal(false);
   };
 
-  const toggleActive = async (id: string, active: boolean) => {
-    await supabase.from('product_styles').update({ active: !active }).eq('id', id);
+  const toggleActive = (id: string, active: boolean) => {
     setRows(prev => prev.map(r => r.id === id ? { ...r, active: !active } : r));
   };
 
@@ -97,7 +91,11 @@ export function ProductStylesTab() {
     return !q || r.style_code.toLowerCase().includes(q) || r.name.toLowerCase().includes(q) || r.customer.name.toLowerCase().includes(q);
   });
 
-  const typeColor: Record<string, string> = { SHOES: 'bg-blue-100 text-blue-700', APPAREL: 'bg-emerald-100 text-emerald-700', OTHER: 'bg-slate-100 text-slate-600' };
+  const typeColor: Record<string, string> = {
+    SHOE: 'bg-blue-100 text-blue-700',
+    BAG: 'bg-emerald-100 text-emerald-700',
+    BELT: 'bg-amber-100 text-amber-700',
+  };
 
   return (
     <>
@@ -113,9 +111,7 @@ export function ProductStylesTab() {
         )}
       </div>
 
-      {loading ? (
-        <div className="space-y-2">{[...Array(4)].map((_, i) => <div key={i} className="h-14 bg-slate-100 rounded-xl animate-pulse" />)}</div>
-      ) : filtered.length === 0 ? (
+      {filtered.length === 0 ? (
         <div className="py-16 text-center"><Package className="w-10 h-10 text-slate-200 mx-auto mb-2" /><p className="text-slate-400 text-sm">Chưa có mã hàng nào</p></div>
       ) : (
         <div className="overflow-x-auto rounded-xl border border-slate-100">
@@ -171,24 +167,24 @@ export function ProductStylesTab() {
             <FormField label="Khách hàng" required>
               <select className={selectClass} value={form.customer_id} onChange={e => setForm(f => ({ ...f, customer_id: e.target.value }))}>
                 <option value="">Chọn khách hàng</option>
-                {customers.map(c => <option key={c.id} value={c.id}>{c.name}</option>)}
+                {MOCK_CUSTOMERS.filter(c => c.is_active).map(c => <option key={c.id} value={c.id}>{c.name}</option>)}
               </select>
             </FormField>
             <FormField label="Nhà máy" required>
               <select className={selectClass} value={form.factory_id} onChange={e => setForm(f => ({ ...f, factory_id: e.target.value }))}>
                 <option value="">Chọn nhà máy</option>
-                {factories.map(f => <option key={f.id} value={f.id}>{f.name}</option>)}
+                {MOCK_FACTORIES.filter(f => f.is_active).map(f => <option key={f.id} value={f.id}>{f.name}</option>)}
               </select>
             </FormField>
             <FormField label="Loại sản phẩm" required>
               <select className={selectClass} value={form.product_type_id} onChange={e => setForm(f => ({ ...f, product_type_id: e.target.value }))}>
                 <option value="">Chọn loại</option>
-                {productTypes.map(t => <option key={t.id} value={t.id}>{t.name}</option>)}
+                {MOCK_PRODUCT_TYPES.map(t => <option key={t.id} value={t.id}>{t.name}</option>)}
               </select>
             </FormField>
             <div className="flex gap-3 pt-2">
               <button onClick={() => setShowModal(false)} className="flex-1 py-2.5 border border-slate-200 text-slate-600 rounded-xl text-sm font-medium hover:bg-slate-50">Hủy</button>
-              <button onClick={save} disabled={saving} className="flex-1 py-2.5 bg-blue-600 hover:bg-blue-700 disabled:bg-blue-400 text-white rounded-xl text-sm font-medium">{saving ? 'Đang lưu...' : 'Lưu'}</button>
+              <button onClick={save} className="flex-1 py-2.5 bg-blue-600 hover:bg-blue-700 text-white rounded-xl text-sm font-medium">Lưu</button>
             </div>
           </div>
         </Modal>

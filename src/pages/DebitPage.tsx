@@ -1,7 +1,7 @@
-import { useEffect, useState, useCallback } from 'react';
-import { supabase } from '../lib/supabase';
+import { useState } from 'react';
 import { useAuth } from '../contexts/AuthContext';
 import type { DebitNote, DebitNoteItem, DebitNoteStatus } from '../lib/database.types';
+import { MOCK_DEBIT_NOTES, MOCK_DEBIT_NOTE_ITEMS, MOCK_CUSTOMERS, MOCK_FACTORIES } from '../lib/mock-data';
 import { Modal } from '../components/ui/Modal';
 import { ErrorAlert } from '../components/ui/ErrorAlert';
 import { FormField, inputClass, selectClass } from '../components/ui/FormField';
@@ -31,116 +31,71 @@ const STATUS_COLORS: Record<DebitNoteStatus, string> = {
 const today = () => new Date().toISOString().split('T')[0];
 
 const formatAmount = (amount: number, currency: string) => {
-  if (currency === 'JPY') {
-    return new Intl.NumberFormat('ja-JP', { style: 'currency', currency: 'JPY' }).format(amount);
-  }
-  if (currency === 'VND') {
-    return new Intl.NumberFormat('vi-VN', { style: 'currency', currency: 'VND' }).format(amount);
-  }
+  if (currency === 'JPY') return new Intl.NumberFormat('ja-JP', { style: 'currency', currency: 'JPY' }).format(amount);
+  if (currency === 'VND') return new Intl.NumberFormat('vi-VN', { style: 'currency', currency: 'VND' }).format(amount);
   return new Intl.NumberFormat('en-US', { style: 'currency', currency: 'USD' }).format(amount);
 };
 
 export default function DebitPage() {
   const { user, role } = useAuth();
-  const [debitNotes, setDebitNotes] = useState<DebitNote[]>([]);
-  const [loading, setLoading] = useState(true);
+  const [debitNotes, setDebitNotes] = useState<DebitNote[]>(MOCK_DEBIT_NOTES);
+  const [allItems] = useState<DebitNoteItem[]>(MOCK_DEBIT_NOTE_ITEMS);
   const [filterStatus, setFilterStatus] = useState('');
   const [showFilterMenu, setShowFilterMenu] = useState(false);
 
   const [showCreateModal, setShowCreateModal] = useState(false);
   const [createForm, setCreateForm] = useState<CreateFormState>({
-    customer_id: '',
-    factory_id: '',
-    period_from: today(),
-    period_to: today(),
-    currency: 'USD',
-    notes: '',
+    customer_id: '', factory_id: '', period_from: today(), period_to: today(), currency: 'USD', notes: '',
   });
-  const [creating, setCreating] = useState(false);
   const [createError, setCreateError] = useState('');
 
   const [viewNote, setViewNote] = useState<DebitNote | null>(null);
-  const [viewItems, setViewItems] = useState<DebitNoteItem[]>([]);
-  const [viewLoading, setViewLoading] = useState(false);
-
-  const [lockError, setLockError] = useState('');
 
   const canManage = role === 'manager' || role === 'accounting_admin';
 
-  const load = useCallback(async () => {
-    setLoading(true);
-    const { data } = await supabase
-      .from('debit_notes')
-      .select('*')
-      .order('created_at', { ascending: false });
-    setDebitNotes(data ?? []);
-    setLoading(false);
-  }, []);
+  const openDetail = (note: DebitNote) => setViewNote(note);
 
-  useEffect(() => { load(); }, [load]);
-
-  const openDetail = async (note: DebitNote) => {
-    setViewNote(note);
-    setViewItems([]);
-    setViewLoading(true);
-    const { data } = await supabase
-      .from('debit_note_items')
-      .select('*')
-      .eq('debit_note_id', note.id)
-      .order('created_at', { ascending: true });
-    setViewItems(data ?? []);
-    setViewLoading(false);
-  };
-
-  const handleCreate = async () => {
-    if (!createForm.customer_id.trim()) { setCreateError('Vui lòng nhập Customer ID'); return; }
-    if (!createForm.factory_id.trim()) { setCreateError('Vui lòng nhập Factory ID'); return; }
+  const handleCreate = () => {
+    if (!createForm.customer_id) { setCreateError('Vui lòng chọn khách hàng'); return; }
+    if (!createForm.factory_id) { setCreateError('Vui lòng chọn nhà máy'); return; }
     if (!createForm.period_from) { setCreateError('Vui lòng chọn ngày bắt đầu'); return; }
     if (!createForm.period_to) { setCreateError('Vui lòng chọn ngày kết thúc'); return; }
     if (createForm.period_to < createForm.period_from) { setCreateError('Ngày kết thúc phải sau ngày bắt đầu'); return; }
-    setCreating(true);
-    setCreateError('');
-    const { error } = await supabase.from('debit_notes').insert({
-      customer_id: createForm.customer_id.trim(),
-      factory_id: createForm.factory_id.trim(),
+    const newNote: DebitNote = {
+      id: `dn-${Date.now()}`,
+      debit_note_no: null,
+      customer_id: createForm.customer_id,
+      factory_id: createForm.factory_id,
       period_from: createForm.period_from,
       period_to: createForm.period_to,
       currency: createForm.currency,
-      notes: createForm.notes.trim(),
-      status: 'draft',
-      created_by: user?.id ?? null,
       total_amount: 0,
-    });
-    if (error) { setCreateError(error.message); setCreating(false); return; }
+      status: 'draft',
+      notes: createForm.notes.trim(),
+      locked_at: null, locked_by: null,
+      created_at: new Date().toISOString(),
+      updated_at: new Date().toISOString(),
+      created_by: user?.id ?? null,
+    };
+    setDebitNotes(prev => [newNote, ...prev]);
     setShowCreateModal(false);
     setCreateForm({ customer_id: '', factory_id: '', period_from: today(), period_to: today(), currency: 'USD', notes: '' });
-    await load();
-    setCreating(false);
+    setCreateError('');
   };
 
-  const handleLock = async (note: DebitNote) => {
-    if (!user) return;
-    setLockError('');
+  const handleLock = (note: DebitNote) => {
     const now = new Date().toISOString();
-    const { error } = await supabase
-      .from('debit_notes')
-      .update({ status: 'locked', locked_at: now, locked_by: user.id })
-      .eq('id', note.id);
-    if (error) { setLockError(error.message); return; }
-    await load();
-    if (viewNote?.id === note.id) {
-      setViewNote(prev => prev ? { ...prev, status: 'locked', locked_at: now, locked_by: user.id } : prev);
-    }
+    setDebitNotes(prev => prev.map(n => n.id === note.id ? { ...n, status: 'locked' as DebitNoteStatus, locked_at: now, locked_by: user?.id ?? null } : n));
+    if (viewNote?.id === note.id) setViewNote(prev => prev ? { ...prev, status: 'locked', locked_at: now, locked_by: user?.id ?? null } : prev);
   };
 
   const filtered = debitNotes.filter(n => !filterStatus || n.status === filterStatus);
+  const getCustomerName = (id: string) => MOCK_CUSTOMERS.find(c => c.id === id)?.name ?? id;
 
   if (role !== null && role !== 'manager' && role !== 'accounting_admin') {
     return (
       <div className="max-w-4xl mx-auto">
-        <div className="mb-6">
-          <h1 className="text-2xl font-bold text-slate-900">Debit Note</h1>
-        </div>
+        <div className="mb-6"><h1 className="text-2xl font-bold text-slate-900">Debit Note</h1></div>
         <div className="flex flex-col items-center justify-center py-20 gap-3">
           <AlertCircle className="w-12 h-12 text-red-400" />
           <p className="text-slate-700 font-semibold text-lg">Không có quyền truy cập</p>
@@ -155,8 +110,7 @@ export default function DebitPage() {
       <div className="mb-6 flex items-start justify-between gap-4">
         <div>
           <h1 className="text-2xl font-bold text-slate-900 flex items-center gap-2">
-            <Receipt className="w-6 h-6 text-slate-600" />
-            Debit Note
+            <Receipt className="w-6 h-6 text-slate-600" /> Debit Note
           </h1>
           <p className="text-slate-500 text-sm mt-1">Quản lý và tạo debit note từ phiên kiểm hàng</p>
         </div>
@@ -172,10 +126,7 @@ export default function DebitPage() {
 
       <div className="flex items-center gap-3 mb-4">
         <div className="relative">
-          <button
-            onClick={() => setShowFilterMenu(v => !v)}
-            className="flex items-center gap-2 px-4 py-2.5 border border-slate-200 rounded-xl text-sm bg-white hover:bg-slate-50 transition-colors"
-          >
+          <button onClick={() => setShowFilterMenu(v => !v)} className="flex items-center gap-2 px-4 py-2.5 border border-slate-200 rounded-xl text-sm bg-white hover:bg-slate-50 transition-colors">
             <Filter className="w-4 h-4 text-slate-400" />
             {filterStatus ? STATUS_LABELS[filterStatus as DebitNoteStatus] : 'Tất cả trạng thái'}
             <ChevronDown className="w-4 h-4 text-slate-400" />
@@ -183,11 +134,7 @@ export default function DebitPage() {
           {showFilterMenu && (
             <div className="absolute top-full left-0 mt-1 z-20 bg-white border border-slate-200 rounded-xl shadow-lg py-1 min-w-[180px]">
               {(['', 'draft', 'reviewed', 'locked'] as const).map(s => (
-                <button
-                  key={s}
-                  onClick={() => { setFilterStatus(s); setShowFilterMenu(false); }}
-                  className={`w-full text-left px-4 py-2 text-sm hover:bg-slate-50 transition-colors ${filterStatus === s ? 'font-semibold text-blue-600' : 'text-slate-700'}`}
-                >
+                <button key={s} onClick={() => { setFilterStatus(s); setShowFilterMenu(false); }} className={`w-full text-left px-4 py-2 text-sm hover:bg-slate-50 transition-colors ${filterStatus === s ? 'font-semibold text-blue-600' : 'text-slate-700'}`}>
                   {s === '' ? 'Tất cả trạng thái' : STATUS_LABELS[s]}
                 </button>
               ))}
@@ -197,17 +144,7 @@ export default function DebitPage() {
         <span className="text-xs text-slate-400">{filtered.length} kết quả</span>
       </div>
 
-      {lockError && (
-        <div className="mb-4">
-          <ErrorAlert message={lockError} />
-        </div>
-      )}
-
-      {loading ? (
-        <div className="space-y-2">
-          {[...Array(4)].map((_, i) => <div key={i} className="h-20 bg-slate-100 rounded-xl animate-pulse" />)}
-        </div>
-      ) : filtered.length === 0 ? (
+      {filtered.length === 0 ? (
         <div className="py-20 text-center">
           <Receipt className="w-10 h-10 text-slate-200 mx-auto mb-2" />
           <p className="text-slate-400 text-sm">Chưa có debit note nào</p>
@@ -233,7 +170,7 @@ export default function DebitPage() {
                   <td className="px-4 py-3 font-mono text-xs text-slate-700">
                     {note.debit_note_no ?? <span className="text-slate-400 italic">Chưa có số</span>}
                   </td>
-                  <td className="px-4 py-3 text-slate-700 font-medium">{note.customer_id}</td>
+                  <td className="px-4 py-3 text-slate-700 font-medium">{getCustomerName(note.customer_id)}</td>
                   <td className="px-4 py-3 text-slate-500 text-xs">
                     <span className="flex items-center gap-1">
                       <Calendar className="w-3.5 h-3.5 shrink-0" />
@@ -254,22 +191,14 @@ export default function DebitPage() {
                       {STATUS_LABELS[note.status]}
                     </span>
                   </td>
-                  <td className="px-4 py-3 text-slate-400 text-xs">
-                    {new Date(note.created_at).toLocaleDateString('vi-VN')}
-                  </td>
+                  <td className="px-4 py-3 text-slate-400 text-xs">{new Date(note.created_at).toLocaleDateString('vi-VN')}</td>
                   <td className="px-4 py-3">
                     <div className="flex items-center justify-end gap-2">
-                      <button
-                        onClick={() => openDetail(note)}
-                        className="flex items-center gap-1 px-2.5 py-1.5 bg-slate-100 hover:bg-slate-200 text-slate-600 rounded-lg text-xs font-medium transition-colors"
-                      >
+                      <button onClick={() => openDetail(note)} className="flex items-center gap-1 px-2.5 py-1.5 bg-slate-100 hover:bg-slate-200 text-slate-600 rounded-lg text-xs font-medium transition-colors">
                         <Eye className="w-3.5 h-3.5" /> Xem
                       </button>
                       {canManage && note.status !== 'locked' && (
-                        <button
-                          onClick={() => handleLock(note)}
-                          className="flex items-center gap-1 px-2.5 py-1.5 bg-green-50 hover:bg-green-100 text-green-700 rounded-lg text-xs font-medium transition-colors"
-                        >
+                        <button onClick={() => handleLock(note)} className="flex items-center gap-1 px-2.5 py-1.5 bg-green-50 hover:bg-green-100 text-green-700 rounded-lg text-xs font-medium transition-colors">
                           <Lock className="w-3.5 h-3.5" /> Khóa
                         </button>
                       )}
@@ -286,97 +215,56 @@ export default function DebitPage() {
         <Modal title="Tạo Debit Note mới" onClose={() => setShowCreateModal(false)}>
           <div className="space-y-4">
             {createError && <ErrorAlert message={createError} />}
-            <FormField label="Customer ID" required>
-              <input
-                type="text"
-                className={inputClass}
-                value={createForm.customer_id}
-                onChange={e => setCreateForm(f => ({ ...f, customer_id: e.target.value }))}
-                placeholder="Nhập customer ID..."
-              />
+            <FormField label="Khách hàng" required>
+              <select className={selectClass} value={createForm.customer_id} onChange={e => setCreateForm(f => ({ ...f, customer_id: e.target.value }))}>
+                <option value="">Chọn khách hàng</option>
+                {MOCK_CUSTOMERS.filter(c => c.is_active).map(c => <option key={c.id} value={c.id}>{c.name}</option>)}
+              </select>
             </FormField>
-            <FormField label="Factory ID" required>
-              <input
-                type="text"
-                className={inputClass}
-                value={createForm.factory_id}
-                onChange={e => setCreateForm(f => ({ ...f, factory_id: e.target.value }))}
-                placeholder="Nhập factory ID..."
-              />
+            <FormField label="Nhà máy" required>
+              <select className={selectClass} value={createForm.factory_id} onChange={e => setCreateForm(f => ({ ...f, factory_id: e.target.value }))}>
+                <option value="">Chọn nhà máy</option>
+                {MOCK_FACTORIES.filter(f => f.is_active).map(f => <option key={f.id} value={f.id}>{f.name}</option>)}
+              </select>
             </FormField>
             <div className="grid grid-cols-2 gap-4">
               <FormField label="Từ ngày" required>
-                <input
-                  type="date"
-                  className={inputClass}
-                  value={createForm.period_from}
-                  onChange={e => setCreateForm(f => ({ ...f, period_from: e.target.value }))}
-                />
+                <input type="date" className={inputClass} value={createForm.period_from} onChange={e => setCreateForm(f => ({ ...f, period_from: e.target.value }))} />
               </FormField>
               <FormField label="Đến ngày" required>
-                <input
-                  type="date"
-                  className={inputClass}
-                  value={createForm.period_to}
-                  onChange={e => setCreateForm(f => ({ ...f, period_to: e.target.value }))}
-                />
+                <input type="date" className={inputClass} value={createForm.period_to} onChange={e => setCreateForm(f => ({ ...f, period_to: e.target.value }))} />
               </FormField>
             </div>
             <FormField label="Tiền tệ" required>
-              <select
-                className={selectClass}
-                value={createForm.currency}
-                onChange={e => setCreateForm(f => ({ ...f, currency: e.target.value }))}
-              >
+              <select className={selectClass} value={createForm.currency} onChange={e => setCreateForm(f => ({ ...f, currency: e.target.value }))}>
                 <option value="USD">USD</option>
                 <option value="JPY">JPY</option>
                 <option value="VND">VND</option>
               </select>
             </FormField>
             <FormField label="Ghi chú">
-              <textarea
-                className={`${inputClass} resize-none`}
-                rows={3}
-                value={createForm.notes}
-                onChange={e => setCreateForm(f => ({ ...f, notes: e.target.value }))}
-                placeholder="Ghi chú thêm..."
-              />
+              <textarea className={`${inputClass} resize-none`} rows={3} value={createForm.notes} onChange={e => setCreateForm(f => ({ ...f, notes: e.target.value }))} placeholder="Ghi chú thêm..." />
             </FormField>
             <div className="flex gap-3 pt-2">
-              <button
-                onClick={() => setShowCreateModal(false)}
-                className="flex-1 py-2.5 border border-slate-200 text-slate-600 rounded-xl text-sm font-medium hover:bg-slate-50 transition-colors"
-              >
-                Hủy
-              </button>
-              <button
-                onClick={handleCreate}
-                disabled={creating}
-                className="flex-1 py-2.5 bg-blue-600 hover:bg-blue-700 disabled:bg-blue-400 text-white rounded-xl text-sm font-medium transition-colors"
-              >
-                {creating ? 'Đang tạo...' : 'Tạo Debit Note'}
-              </button>
+              <button onClick={() => setShowCreateModal(false)} className="flex-1 py-2.5 border border-slate-200 text-slate-600 rounded-xl text-sm font-medium hover:bg-slate-50 transition-colors">Hủy</button>
+              <button onClick={handleCreate} className="flex-1 py-2.5 bg-blue-600 hover:bg-blue-700 text-white rounded-xl text-sm font-medium transition-colors">Tạo Debit Note</button>
             </div>
           </div>
         </Modal>
       )}
 
       {viewNote && (
-        <Modal
-          title={`Debit Note: ${viewNote.debit_note_no ?? 'Chưa có số'}`}
-          onClose={() => setViewNote(null)}
-          maxWidth="max-w-3xl"
-        >
+        <Modal title={`Debit Note: ${viewNote.debit_note_no ?? 'Chưa có số'}`} onClose={() => setViewNote(null)} maxWidth="max-w-3xl">
           <div className="space-y-5">
             <div className="grid grid-cols-2 gap-4 text-sm">
               <div className="bg-slate-50 rounded-xl p-3 space-y-2">
                 <div className="flex justify-between">
                   <span className="text-slate-500">Khách hàng</span>
-                  <span className="font-medium text-slate-800">{viewNote.customer_id}</span>
+                  <span className="font-medium text-slate-800">{getCustomerName(viewNote.customer_id)}</span>
                 </div>
                 <div className="flex justify-between">
                   <span className="text-slate-500">Nhà máy</span>
-                  <span className="font-medium text-slate-800">{viewNote.factory_id}</span>
+                  <span className="font-medium text-slate-800">{MOCK_FACTORIES.find(f => f.id === viewNote.factory_id)?.name ?? viewNote.factory_id}</span>
                 </div>
                 <div className="flex justify-between">
                   <span className="text-slate-500">Tiền tệ</span>
@@ -394,32 +282,22 @@ export default function DebitPage() {
                 </div>
                 <div className="flex justify-between">
                   <span className="text-slate-500">Trạng thái</span>
-                  <span className={`inline-flex items-center gap-1 px-2 py-0.5 rounded-full text-xs font-medium ${STATUS_COLORS[viewNote.status]}`}>
-                    {STATUS_LABELS[viewNote.status]}
-                  </span>
+                  <span className={`inline-flex items-center gap-1 px-2 py-0.5 rounded-full text-xs font-medium ${STATUS_COLORS[viewNote.status]}`}>{STATUS_LABELS[viewNote.status]}</span>
                 </div>
               </div>
             </div>
 
             {viewNote.notes && (
-              <div className="bg-amber-50 border border-amber-100 rounded-xl p-3 text-sm text-amber-800">
-                {viewNote.notes}
-              </div>
+              <div className="bg-amber-50 border border-amber-100 rounded-xl p-3 text-sm text-amber-800">{viewNote.notes}</div>
             )}
 
             <div>
               <div className="flex items-center justify-between mb-2">
                 <h4 className="font-semibold text-slate-800 text-sm">Chi tiết dòng</h4>
-                <span className="text-xs text-slate-400">{viewItems.length} dòng</span>
+                <span className="text-xs text-slate-400">{allItems.filter(i => i.debit_note_id === viewNote.id).length} dòng</span>
               </div>
-              {viewLoading ? (
-                <div className="space-y-2">
-                  {[...Array(3)].map((_, i) => <div key={i} className="h-10 bg-slate-100 rounded-lg animate-pulse" />)}
-                </div>
-              ) : viewItems.length === 0 ? (
-                <div className="py-8 text-center text-slate-400 text-sm border border-dashed border-slate-200 rounded-xl">
-                  Chưa có dòng chi tiết nào
-                </div>
+              {allItems.filter(i => i.debit_note_id === viewNote.id).length === 0 ? (
+                <div className="py-8 text-center text-slate-400 text-sm border border-dashed border-slate-200 rounded-xl">Chưa có dòng chi tiết nào</div>
               ) : (
                 <div className="border border-slate-100 rounded-xl overflow-hidden">
                   <table className="w-full text-xs">
@@ -433,7 +311,7 @@ export default function DebitPage() {
                       </tr>
                     </thead>
                     <tbody className="divide-y divide-slate-50">
-                      {viewItems.map(item => (
+                      {allItems.filter(i => i.debit_note_id === viewNote.id).map(item => (
                         <tr key={item.id} className="hover:bg-slate-50">
                           <td className="px-3 py-2 text-slate-700">{item.description}</td>
                           <td className="px-3 py-2 text-right text-slate-600">{item.first_inspection_qty.toLocaleString()}</td>
@@ -463,19 +341,11 @@ export default function DebitPage() {
 
             <div className="flex gap-3 pt-1">
               {canManage && viewNote.status !== 'locked' && (
-                <button
-                  onClick={() => handleLock(viewNote)}
-                  className="flex items-center gap-2 px-4 py-2.5 bg-green-600 hover:bg-green-700 text-white rounded-xl text-sm font-medium transition-colors"
-                >
+                <button onClick={() => { handleLock(viewNote); setViewNote(null); }} className="flex items-center gap-2 px-4 py-2.5 bg-green-600 hover:bg-green-700 text-white rounded-xl text-sm font-medium transition-colors">
                   <Lock className="w-4 h-4" /> Khóa Debit Note
                 </button>
               )}
-              <button
-                onClick={() => setViewNote(null)}
-                className="flex-1 py-2.5 border border-slate-200 text-slate-600 rounded-xl text-sm font-medium hover:bg-slate-50 transition-colors"
-              >
-                Đóng
-              </button>
+              <button onClick={() => setViewNote(null)} className="flex-1 py-2.5 border border-slate-200 text-slate-600 rounded-xl text-sm font-medium hover:bg-slate-50 transition-colors">Đóng</button>
             </div>
           </div>
         </Modal>

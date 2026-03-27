@@ -1,7 +1,9 @@
-import { useEffect, useState, useCallback } from 'react';
-import { supabase } from '../../lib/supabase';
+import { useState } from 'react';
 import { useAuth } from '../../contexts/AuthContext';
 import type { ReportTemplate, Customer, Factory, DefectCatalog } from '../../lib/database.types';
+import {
+  MOCK_REPORT_TEMPLATES, MOCK_CUSTOMERS, MOCK_FACTORIES, MOCK_DEFECT_CATALOGS,
+} from '../../lib/mock-data';
 import { Modal } from '../../components/ui/Modal';
 import { FormField, inputClass, selectClass } from '../../components/ui/FormField';
 import { ErrorAlert } from '../../components/ui/ErrorAlert';
@@ -22,51 +24,27 @@ interface FormState {
   export_format: string;
 }
 
-const empty: FormState = {
-  code: '', name: '', customer_id: '', factory_id: '', defect_catalog_id: '', export_format: 'xlsx',
-};
+const empty: FormState = { code: '', name: '', customer_id: '', factory_id: '', defect_catalog_id: '', export_format: 'xlsx' };
 
-const formatLabels: Record<string, string> = {
-  xlsx: 'Excel (.xlsx)',
-  csv: 'CSV',
-  pdf: 'PDF',
-};
+const formatLabels: Record<string, string> = { xlsx: 'Excel (.xlsx)', csv: 'CSV', pdf: 'PDF' };
+
+function buildRows(templates: ReportTemplate[]): TemplateRow[] {
+  return templates.map(t => ({
+    ...t,
+    customer: t.customer_id ? MOCK_CUSTOMERS.find(c => c.id === t.customer_id) : undefined,
+    factory: t.factory_id ? MOCK_FACTORIES.find(f => f.id === t.factory_id) : undefined,
+    defect_catalog: t.defect_catalog_id ? MOCK_DEFECT_CATALOGS.find(c => c.id === t.defect_catalog_id) : undefined,
+  }));
+}
 
 export function ReportTemplatesTab() {
   const { isManager } = useAuth();
-  const [rows, setRows] = useState<TemplateRow[]>([]);
-  const [customers, setCustomers] = useState<Customer[]>([]);
-  const [factories, setFactories] = useState<Factory[]>([]);
-  const [catalogs, setCatalogs] = useState<DefectCatalog[]>([]);
-  const [loading, setLoading] = useState(true);
+  const [rows, setRows] = useState<TemplateRow[]>(buildRows(MOCK_REPORT_TEMPLATES));
   const [showModal, setShowModal] = useState(false);
   const [editId, setEditId] = useState<string | null>(null);
   const [form, setForm] = useState<FormState>(empty);
-  const [saving, setSaving] = useState(false);
   const [error, setError] = useState('');
   const [showInactive, setShowInactive] = useState(false);
-
-  const load = useCallback(async () => {
-    setLoading(true);
-    const [{ data: tmplData }, { data: custData }, { data: factData }, { data: catData }] = await Promise.all([
-      supabase.from('report_templates').select('*, customers(*), factories(*), defect_catalogs(*)').order('code'),
-      supabase.from('customers').select('*').eq('is_active', true).order('code'),
-      supabase.from('factories').select('*').eq('is_active', true).order('code'),
-      supabase.from('defect_catalogs').select('*').eq('active', true).order('code'),
-    ]);
-    setCustomers(custData ?? []);
-    setFactories(factData ?? []);
-    setCatalogs(catData ?? []);
-    setRows((tmplData ?? []).map((t: any) => ({
-      ...t,
-      customer: t.customers ?? undefined,
-      factory: t.factories ?? undefined,
-      defect_catalog: t.defect_catalogs ?? undefined,
-    })));
-    setLoading(false);
-  }, []);
-
-  useEffect(() => { load(); }, [load]);
 
   const openCreate = () => { setEditId(null); setForm(empty); setError(''); setShowModal(true); };
   const openEdit = (r: TemplateRow) => {
@@ -81,28 +59,36 @@ export function ReportTemplatesTab() {
     setError(''); setShowModal(true);
   };
 
-  const save = async () => {
+  const save = () => {
     if (!form.code.trim() || !form.name.trim()) { setError('Vui lòng điền mã và tên template'); return; }
-    setSaving(true); setError('');
-    const payload = {
+    const payload: ReportTemplate = {
+      id: editId ?? `tmpl-${Date.now()}`,
       code: form.code.trim(),
       name: form.name.trim(),
       customer_id: form.customer_id || null,
       factory_id: form.factory_id || null,
       defect_catalog_id: form.defect_catalog_id || null,
       export_format: form.export_format,
+      active: true,
+      created_at: new Date().toISOString(),
+      updated_at: new Date().toISOString(),
     };
-    const { error: e } = editId
-      ? await supabase.from('report_templates').update(payload).eq('id', editId)
-      : await supabase.from('report_templates').insert({ ...payload, active: true });
-    if (e) setError(e.message);
-    else { setShowModal(false); load(); }
-    setSaving(false);
+    const newRow: TemplateRow = {
+      ...payload,
+      customer: payload.customer_id ? MOCK_CUSTOMERS.find(c => c.id === payload.customer_id) : undefined,
+      factory: payload.factory_id ? MOCK_FACTORIES.find(f => f.id === payload.factory_id) : undefined,
+      defect_catalog: payload.defect_catalog_id ? MOCK_DEFECT_CATALOGS.find(c => c.id === payload.defect_catalog_id) : undefined,
+    };
+    if (editId) {
+      setRows(prev => prev.map(r => r.id === editId ? newRow : r));
+    } else {
+      setRows(prev => [...prev, newRow]);
+    }
+    setShowModal(false);
   };
 
-  const toggleActive = async (id: string, current: boolean) => {
-    await supabase.from('report_templates').update({ active: !current }).eq('id', id);
-    load();
+  const toggleActive = (id: string, current: boolean) => {
+    setRows(prev => prev.map(r => r.id === id ? { ...r, active: !current } : r));
   };
 
   const visible = rows.filter(r => showInactive || r.active);
@@ -121,9 +107,7 @@ export function ReportTemplatesTab() {
         )}
       </div>
 
-      {loading ? (
-        <div className="space-y-2">{[...Array(3)].map((_, i) => <div key={i} className="h-16 bg-slate-100 rounded-xl animate-pulse" />)}</div>
-      ) : visible.length === 0 ? (
+      {visible.length === 0 ? (
         <div className="py-16 text-center"><FileText className="w-10 h-10 text-slate-200 mx-auto mb-2" /><p className="text-slate-400 text-sm">Chưa có mẫu báo cáo nào</p></div>
       ) : (
         <div className="space-y-2">
@@ -146,9 +130,7 @@ export function ReportTemplatesTab() {
               {isManager && (
                 <div className="flex items-center gap-1 shrink-0">
                   <button onClick={() => openEdit(r)} className="p-1.5 hover:bg-slate-100 rounded-lg text-slate-400 hover:text-slate-700 transition-colors"><Edit2 className="w-4 h-4" /></button>
-                  <button onClick={() => toggleActive(r.id, r.active)} className="px-2.5 py-1 text-xs rounded-lg border border-slate-200 text-slate-500 hover:bg-slate-50 transition-colors">
-                    {r.active ? 'Ẩn' : 'Hiện'}
-                  </button>
+                  <button onClick={() => toggleActive(r.id, r.active)} className="px-2.5 py-1 text-xs rounded-lg border border-slate-200 text-slate-500 hover:bg-slate-50 transition-colors">{r.active ? 'Ẩn' : 'Hiện'}</button>
                 </div>
               )}
             </div>
@@ -179,25 +161,25 @@ export function ReportTemplatesTab() {
               <FormField label="Khách hàng">
                 <select className={selectClass} value={form.customer_id} onChange={e => setForm(f => ({ ...f, customer_id: e.target.value }))}>
                   <option value="">Tất cả</option>
-                  {customers.map(c => <option key={c.id} value={c.id}>{c.code} — {c.name}</option>)}
+                  {MOCK_CUSTOMERS.filter(c => c.is_active).map(c => <option key={c.id} value={c.id}>{c.code} — {c.name}</option>)}
                 </select>
               </FormField>
               <FormField label="Xưởng">
                 <select className={selectClass} value={form.factory_id} onChange={e => setForm(f => ({ ...f, factory_id: e.target.value }))}>
                   <option value="">Tất cả</option>
-                  {factories.map(f => <option key={f.id} value={f.id}>{f.code} — {f.name}</option>)}
+                  {MOCK_FACTORIES.filter(f => f.is_active).map(f => <option key={f.id} value={f.id}>{f.code} — {f.name}</option>)}
                 </select>
               </FormField>
             </div>
             <FormField label="Danh mục lỗi">
               <select className={selectClass} value={form.defect_catalog_id} onChange={e => setForm(f => ({ ...f, defect_catalog_id: e.target.value }))}>
                 <option value="">Không gán</option>
-                {catalogs.map(c => <option key={c.id} value={c.id}>{c.code} — {c.name}</option>)}
+                {MOCK_DEFECT_CATALOGS.filter(c => c.active).map(c => <option key={c.id} value={c.id}>{c.code} — {c.name}</option>)}
               </select>
             </FormField>
             <div className="flex gap-3 pt-2">
               <button onClick={() => setShowModal(false)} className="flex-1 py-2.5 border border-slate-200 text-slate-600 rounded-xl text-sm font-medium hover:bg-slate-50">Hủy</button>
-              <button onClick={save} disabled={saving} className="flex-1 py-2.5 bg-blue-600 hover:bg-blue-700 disabled:bg-blue-400 text-white rounded-xl text-sm font-medium">{saving ? 'Đang lưu...' : 'Lưu'}</button>
+              <button onClick={save} className="flex-1 py-2.5 bg-blue-600 hover:bg-blue-700 text-white rounded-xl text-sm font-medium">Lưu</button>
             </div>
           </div>
         </Modal>

@@ -1,7 +1,9 @@
-import { useEffect, useState, useCallback } from 'react';
-import { supabase } from '../../lib/supabase';
+import { useState } from 'react';
 import { useAuth } from '../../contexts/AuthContext';
 import type { DefectCatalog, DefectCatalogItem, ProductTypeRecord } from '../../lib/database.types';
+import {
+  MOCK_DEFECT_CATALOGS, MOCK_DEFECT_CATALOG_ITEMS, MOCK_PRODUCT_TYPES,
+} from '../../lib/mock-data';
 import { Modal } from '../../components/ui/Modal';
 import { FormField, inputClass, selectClass } from '../../components/ui/FormField';
 import { ErrorAlert } from '../../components/ui/ErrorAlert';
@@ -18,48 +20,34 @@ interface ItemFormState { code: string; name_vn: string; name_jp: string; sort_o
 const emptyCatalog: CatalogFormState = { code: '', name: '', product_type_id: '' };
 const emptyItem: ItemFormState = { code: '', name_vn: '', name_jp: '', sort_order: '0' };
 
+function buildCatalogs(catalogs: DefectCatalog[], items: DefectCatalogItem[]): CatalogRow[] {
+  const itemMap: Record<string, DefectCatalogItem[]> = {};
+  items.forEach(item => {
+    if (!itemMap[item.catalog_id]) itemMap[item.catalog_id] = [];
+    itemMap[item.catalog_id].push(item);
+  });
+  return catalogs.map(c => ({
+    ...c,
+    product_type: c.product_type_id ? MOCK_PRODUCT_TYPES.find(t => t.id === c.product_type_id) : undefined,
+    items: itemMap[c.id] ?? [],
+  }));
+}
+
 export function DefectCatalogsTab() {
   const { isManager } = useAuth();
-  const [catalogs, setCatalogs] = useState<CatalogRow[]>([]);
-  const [productTypes, setProductTypes] = useState<ProductTypeRecord[]>([]);
-  const [loading, setLoading] = useState(true);
+  const [catalogs, setCatalogs] = useState<CatalogRow[]>(buildCatalogs(MOCK_DEFECT_CATALOGS, MOCK_DEFECT_CATALOG_ITEMS));
   const [expandedId, setExpandedId] = useState<string | null>(null);
 
   const [showCatalogModal, setShowCatalogModal] = useState(false);
   const [editCatalogId, setEditCatalogId] = useState<string | null>(null);
   const [catalogForm, setCatalogForm] = useState<CatalogFormState>(emptyCatalog);
-  const [catalogSaving, setCatalogSaving] = useState(false);
   const [catalogError, setCatalogError] = useState('');
 
   const [showItemModal, setShowItemModal] = useState(false);
   const [editItemId, setEditItemId] = useState<string | null>(null);
   const [itemCatalogId, setItemCatalogId] = useState<string | null>(null);
   const [itemForm, setItemForm] = useState<ItemFormState>(emptyItem);
-  const [itemSaving, setItemSaving] = useState(false);
   const [itemError, setItemError] = useState('');
-
-  const load = useCallback(async () => {
-    setLoading(true);
-    const [{ data: catData }, { data: itemData }, { data: ptData }] = await Promise.all([
-      supabase.from('defect_catalogs').select('*, product_types(*)').order('code'),
-      supabase.from('defect_catalog_items').select('*').order('sort_order'),
-      supabase.from('product_types').select('*').order('code'),
-    ]);
-    setProductTypes(ptData ?? []);
-    const itemMap: Record<string, DefectCatalogItem[]> = {};
-    (itemData ?? []).forEach((item: any) => {
-      if (!itemMap[item.catalog_id]) itemMap[item.catalog_id] = [];
-      itemMap[item.catalog_id].push(item);
-    });
-    setCatalogs((catData ?? []).map((c: any) => ({
-      ...c,
-      product_type: c.product_types ?? undefined,
-      items: itemMap[c.id] ?? [],
-    })));
-    setLoading(false);
-  }, []);
-
-  useEffect(() => { load(); }, [load]);
 
   const openCreateCatalog = () => { setEditCatalogId(null); setCatalogForm(emptyCatalog); setCatalogError(''); setShowCatalogModal(true); };
   const openEditCatalog = (c: CatalogRow) => {
@@ -68,21 +56,35 @@ export function DefectCatalogsTab() {
     setCatalogError(''); setShowCatalogModal(true);
   };
 
-  const saveCatalog = async () => {
+  const saveCatalog = () => {
     if (!catalogForm.code.trim() || !catalogForm.name.trim()) { setCatalogError('Vui lòng điền mã và tên danh mục'); return; }
-    setCatalogSaving(true); setCatalogError('');
-    const payload = { code: catalogForm.code.trim(), name: catalogForm.name.trim(), product_type_id: catalogForm.product_type_id || null };
-    const { error: e } = editCatalogId
-      ? await supabase.from('defect_catalogs').update(payload).eq('id', editCatalogId)
-      : await supabase.from('defect_catalogs').insert({ ...payload, active: true });
-    if (e) setCatalogError(e.message);
-    else { setShowCatalogModal(false); load(); }
-    setCatalogSaving(false);
+    if (editCatalogId) {
+      setCatalogs(prev => prev.map(c => c.id === editCatalogId ? {
+        ...c,
+        code: catalogForm.code.trim(),
+        name: catalogForm.name.trim(),
+        product_type_id: catalogForm.product_type_id || null,
+        product_type: catalogForm.product_type_id ? MOCK_PRODUCT_TYPES.find(t => t.id === catalogForm.product_type_id) : undefined,
+      } : c));
+    } else {
+      const newCatalog: CatalogRow = {
+        id: `cat-${Date.now()}`,
+        code: catalogForm.code.trim(),
+        name: catalogForm.name.trim(),
+        product_type_id: catalogForm.product_type_id || null,
+        product_type: catalogForm.product_type_id ? MOCK_PRODUCT_TYPES.find(t => t.id === catalogForm.product_type_id) : undefined,
+        active: true,
+        items: [],
+        created_at: new Date().toISOString(),
+        updated_at: new Date().toISOString(),
+      };
+      setCatalogs(prev => [...prev, newCatalog]);
+    }
+    setShowCatalogModal(false);
   };
 
-  const toggleCatalogActive = async (id: string, current: boolean) => {
-    await supabase.from('defect_catalogs').update({ active: !current }).eq('id', id);
-    load();
+  const toggleCatalogActive = (id: string, current: boolean) => {
+    setCatalogs(prev => prev.map(c => c.id === id ? { ...c, active: !current } : c));
   };
 
   const openCreateItem = (catalogId: string) => {
@@ -99,26 +101,37 @@ export function DefectCatalogsTab() {
     setItemError(''); setShowItemModal(true);
   };
 
-  const saveItem = async () => {
+  const saveItem = () => {
     if (!itemForm.name_vn.trim()) { setItemError('Vui lòng điền tên lỗi (tiếng Việt)'); return; }
-    setItemSaving(true); setItemError('');
-    const payload = {
-      code: itemForm.code.trim(),
-      name_vn: itemForm.name_vn.trim(),
-      name_jp: itemForm.name_jp.trim(),
-      sort_order: parseInt(itemForm.sort_order) || 0,
-    };
-    const { error: e } = editItemId
-      ? await supabase.from('defect_catalog_items').update(payload).eq('id', editItemId)
-      : await supabase.from('defect_catalog_items').insert({ ...payload, catalog_id: itemCatalogId, active: true });
-    if (e) setItemError(e.message);
-    else { setShowItemModal(false); load(); }
-    setItemSaving(false);
+    if (editItemId) {
+      setCatalogs(prev => prev.map(c => ({
+        ...c,
+        items: c.items.map(i => i.id === editItemId ? {
+          ...i, code: itemForm.code.trim(), name_vn: itemForm.name_vn.trim(),
+          name_jp: itemForm.name_jp.trim(), sort_order: parseInt(itemForm.sort_order) || 0,
+        } : i),
+      })));
+    } else {
+      const newItem: DefectCatalogItem = {
+        id: `item-${Date.now()}`,
+        catalog_id: itemCatalogId!,
+        code: itemForm.code.trim(),
+        name_vn: itemForm.name_vn.trim(),
+        name_jp: itemForm.name_jp.trim(),
+        sort_order: parseInt(itemForm.sort_order) || 0,
+        active: true,
+        created_at: new Date().toISOString(),
+        updated_at: new Date().toISOString(),
+      };
+      setCatalogs(prev => prev.map(c => c.id === itemCatalogId ? { ...c, items: [...c.items, newItem] } : c));
+    }
+    setShowItemModal(false);
   };
 
-  const toggleItemActive = async (id: string, current: boolean) => {
-    await supabase.from('defect_catalog_items').update({ active: !current }).eq('id', id);
-    load();
+  const toggleItemActive = (catalogId: string, itemId: string, current: boolean) => {
+    setCatalogs(prev => prev.map(c => c.id === catalogId ? {
+      ...c, items: c.items.map(i => i.id === itemId ? { ...i, active: !current } : i),
+    } : c));
   };
 
   return (
@@ -132,9 +145,7 @@ export function DefectCatalogsTab() {
         )}
       </div>
 
-      {loading ? (
-        <div className="space-y-2">{[...Array(3)].map((_, i) => <div key={i} className="h-16 bg-slate-100 rounded-xl animate-pulse" />)}</div>
-      ) : catalogs.length === 0 ? (
+      {catalogs.length === 0 ? (
         <div className="py-16 text-center"><AlertCircle className="w-10 h-10 text-slate-200 mx-auto mb-2" /><p className="text-slate-400 text-sm">Chưa có danh mục lỗi nào</p></div>
       ) : (
         <div className="space-y-2">
@@ -184,7 +195,7 @@ export function DefectCatalogsTab() {
                             {isManager && (
                               <div className="flex items-center gap-1 shrink-0">
                                 <button onClick={() => openEditItem(item)} className="p-1 hover:bg-slate-200 rounded text-slate-400 hover:text-slate-700 transition-colors"><Edit2 className="w-3.5 h-3.5" /></button>
-                                <button onClick={() => toggleItemActive(item.id, item.active)} className="p-1 hover:bg-slate-200 rounded text-slate-400 hover:text-red-500 transition-colors"><Trash2 className="w-3.5 h-3.5" /></button>
+                                <button onClick={() => toggleItemActive(c.id, item.id, item.active)} className="p-1 hover:bg-slate-200 rounded text-slate-400 hover:text-red-500 transition-colors"><Trash2 className="w-3.5 h-3.5" /></button>
                               </div>
                             )}
                           </div>
@@ -215,7 +226,7 @@ export function DefectCatalogsTab() {
               <FormField label="Loại hàng áp dụng">
                 <select className={selectClass} value={catalogForm.product_type_id} onChange={e => setCatalogForm(f => ({ ...f, product_type_id: e.target.value }))}>
                   <option value="">Tất cả loại hàng</option>
-                  {productTypes.map(pt => <option key={pt.id} value={pt.id}>{pt.code} — {pt.name}</option>)}
+                  {MOCK_PRODUCT_TYPES.map(pt => <option key={pt.id} value={pt.id}>{pt.code} — {pt.name}</option>)}
                 </select>
               </FormField>
             </div>
@@ -224,7 +235,7 @@ export function DefectCatalogsTab() {
             </FormField>
             <div className="flex gap-3 pt-2">
               <button onClick={() => setShowCatalogModal(false)} className="flex-1 py-2.5 border border-slate-200 text-slate-600 rounded-xl text-sm font-medium hover:bg-slate-50">Hủy</button>
-              <button onClick={saveCatalog} disabled={catalogSaving} className="flex-1 py-2.5 bg-blue-600 hover:bg-blue-700 disabled:bg-blue-400 text-white rounded-xl text-sm font-medium">{catalogSaving ? 'Đang lưu...' : 'Lưu'}</button>
+              <button onClick={saveCatalog} className="flex-1 py-2.5 bg-blue-600 hover:bg-blue-700 text-white rounded-xl text-sm font-medium">Lưu</button>
             </div>
           </div>
         </Modal>
@@ -250,7 +261,7 @@ export function DefectCatalogsTab() {
             </FormField>
             <div className="flex gap-3 pt-2">
               <button onClick={() => setShowItemModal(false)} className="flex-1 py-2.5 border border-slate-200 text-slate-600 rounded-xl text-sm font-medium hover:bg-slate-50">Hủy</button>
-              <button onClick={saveItem} disabled={itemSaving} className="flex-1 py-2.5 bg-blue-600 hover:bg-blue-700 disabled:bg-blue-400 text-white rounded-xl text-sm font-medium">{itemSaving ? 'Đang lưu...' : 'Lưu'}</button>
+              <button onClick={saveItem} className="flex-1 py-2.5 bg-blue-600 hover:bg-blue-700 text-white rounded-xl text-sm font-medium">Lưu</button>
             </div>
           </div>
         </Modal>

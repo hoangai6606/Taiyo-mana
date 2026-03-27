@@ -1,5 +1,4 @@
-import { useEffect, useState, useCallback } from 'react';
-import { supabase } from '../../lib/supabase';
+import { useState } from 'react';
 import type { InspectionSession, InspectionLine, ProductStyle, Customer, Factory, OrderLot, UserRole } from '../../lib/database.types';
 import { SESSION_STATUS_LABELS, SESSION_STATUS_COLORS } from '../../lib/database.types';
 import { calcLine, calcSessionSummary, isDefectRateHigh, formatDefectRate, validateLine } from '../../services/inspection-calc';
@@ -40,30 +39,19 @@ interface Props {
   userId: string | null;
 }
 
-export function SessionEditor({ session, onBack, onTransition, role, userId }: Props) {
+export function SessionEditor({ session, onBack, onTransition, role }: Props) {
   const [lines, setLines] = useState<InspectionLine[]>(session.lines);
-  const [loading, setLoading] = useState(false);
   const [showLineModal, setShowLineModal] = useState(false);
   const [editLineId, setEditLineId] = useState<string | null>(null);
   const [lineForm, setLineForm] = useState<LineFormState>(emptyLine);
-  const [saving, setSaving] = useState(false);
   const [lineError, setLineError] = useState('');
 
   const canEdit = role ? canEditSession(session.status, role) : false;
   const transitions = role ? getAllowedTransitions(session.status, role) : [];
 
-  const reloadLines = useCallback(async () => {
-    setLoading(true);
-    const { data } = await supabase.from('inspection_lines').select('*').eq('session_id', session.id).order('sort_order');
-    setLines(data ?? []);
-    setLoading(false);
-  }, [session.id]);
-
-  useEffect(() => { reloadLines(); }, [reloadLines]);
-
   const openCreateLine = () => {
     setEditLineId(null);
-    setLineForm({ ...emptyLine, sort_order: String(lines.length * 10) } as any);
+    setLineForm(emptyLine);
     setLineError(''); setShowLineModal(true);
   };
 
@@ -82,7 +70,7 @@ export function SessionEditor({ session, onBack, onTransition, role, userId }: P
     setLineError(''); setShowLineModal(true);
   };
 
-  const parseLine = (): Partial<InspectionLine> => ({
+  const parsedLine = (): Partial<InspectionLine> => ({
     inspected_qty: parseInt(lineForm.inspected_qty) || 0,
     first_pass_good_qty: parseInt(lineForm.first_pass_good_qty) || 0,
     defect_qty: parseInt(lineForm.defect_qty) || 0,
@@ -91,31 +79,32 @@ export function SessionEditor({ session, onBack, onTransition, role, userId }: P
     shipment_qty: parseInt(lineForm.shipment_qty) || 0,
   });
 
-  const saveLine = async () => {
-    const parsed = parseLine();
+  const saveLine = () => {
+    const parsed = parsedLine();
     const errors = validateLine(parsed);
     if (errors.length > 0) { setLineError(errors[0]); return; }
-    setSaving(true); setLineError('');
-    const payload = {
+    const newLine: InspectionLine = {
+      id: editLineId ?? `line-${Date.now()}`,
       session_id: session.id,
       color: lineForm.color.trim(),
       size_label: lineForm.size_label.trim(),
-      ...parsed,
+      ...parsed as Pick<InspectionLine, 'inspected_qty' | 'first_pass_good_qty' | 'defect_qty' | 'reinspection_qty' | 'reinspection_good_qty' | 'shipment_qty'>,
       sort_order: editLineId ? (lines.find(l => l.id === editLineId)?.sort_order ?? lines.length * 10) : lines.length * 10,
       notes: lineForm.notes.trim(),
+      created_at: new Date().toISOString(),
+      updated_at: new Date().toISOString(),
     };
-    const { error: e } = editLineId
-      ? await supabase.from('inspection_lines').update(payload).eq('id', editLineId)
-      : await supabase.from('inspection_lines').insert(payload);
-    if (e) { setLineError(e.message); setSaving(false); return; }
-    setShowLineModal(false); reloadLines();
-    setSaving(false);
+    if (editLineId) {
+      setLines(prev => prev.map(l => l.id === editLineId ? newLine : l));
+    } else {
+      setLines(prev => [...prev, newLine]);
+    }
+    setShowLineModal(false);
   };
 
-  const deleteLine = async (id: string) => {
+  const deleteLine = (id: string) => {
     if (!confirm('Xóa dòng này?')) return;
-    await supabase.from('inspection_lines').delete().eq('id', id);
-    reloadLines();
+    setLines(prev => prev.filter(l => l.id !== id));
   };
 
   const summary = calcSessionSummary(lines);
@@ -200,9 +189,7 @@ export function SessionEditor({ session, onBack, onTransition, role, userId }: P
         )}
       </div>
 
-      {loading ? (
-        <div className="space-y-2">{[...Array(3)].map((_, i) => <div key={i} className="h-16 bg-slate-100 rounded-xl animate-pulse" />)}</div>
-      ) : lines.length === 0 ? (
+      {lines.length === 0 ? (
         <div className="py-12 text-center bg-slate-50 rounded-xl border border-dashed border-slate-200">
           <p className="text-slate-400 text-sm">Chưa có dòng kiểm nào</p>
           {canEdit && <button onClick={openCreateLine} className="mt-2 text-blue-600 text-sm hover:text-blue-700">+ Thêm dòng đầu tiên</button>}
@@ -314,7 +301,7 @@ export function SessionEditor({ session, onBack, onTransition, role, userId }: P
             </FormField>
             <div className="flex gap-3 pt-2">
               <button onClick={() => setShowLineModal(false)} className="flex-1 py-2.5 border border-slate-200 text-slate-600 rounded-xl text-sm font-medium hover:bg-slate-50">Hủy</button>
-              <button onClick={saveLine} disabled={saving} className="flex-1 py-2.5 bg-blue-600 hover:bg-blue-700 disabled:bg-blue-400 text-white rounded-xl text-sm font-medium">{saving ? 'Đang lưu...' : 'Lưu'}</button>
+              <button onClick={saveLine} className="flex-1 py-2.5 bg-blue-600 hover:bg-blue-700 text-white rounded-xl text-sm font-medium">Lưu</button>
             </div>
           </div>
         </Modal>

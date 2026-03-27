@@ -1,8 +1,10 @@
-import { useEffect, useState, useCallback } from 'react';
-import { supabase } from '../../lib/supabase';
+import { useState } from 'react';
 import { useAuth } from '../../contexts/AuthContext';
 import type { OrderLot, ProductStyle, Customer, Factory } from '../../lib/database.types';
 import { ORDER_STATUS_LABELS } from '../../lib/database.types';
+import {
+  MOCK_ORDER_LOTS, MOCK_PRODUCT_STYLES, MOCK_CUSTOMERS, MOCK_FACTORIES, MOCK_QUANTITY_LOGS,
+} from '../../lib/mock-data';
 import { Modal } from '../../components/ui/Modal';
 import { FormField, inputClass, selectClass } from '../../components/ui/FormField';
 import { ErrorAlert } from '../../components/ui/ErrorAlert';
@@ -37,40 +39,32 @@ const statusColors: Record<string, string> = {
   cancelled: 'bg-slate-100 text-slate-500',
 };
 
+function buildRows(lots: OrderLot[]): LotRow[] {
+  const totals: Record<string, number> = {};
+  MOCK_QUANTITY_LOGS.forEach(l => { totals[l.order_lot_id] = (totals[l.order_lot_id] || 0) + l.quantity; });
+  return lots.map(l => {
+    const style = MOCK_PRODUCT_STYLES.find(s => s.id === l.product_style_id)!;
+    const customer = MOCK_CUSTOMERS.find(c => c.id === l.customer_id)!;
+    const factory = MOCK_FACTORIES.find(f => f.id === l.factory_id)!;
+    return { ...l, product_style: { ...style, customer, factory }, produced_qty: totals[l.id] || 0 };
+  });
+}
+
 export function OrderLotsTab() {
   const { isManager } = useAuth();
-  const [rows, setRows] = useState<LotRow[]>([]);
-  const [styles, setStyles] = useState<(ProductStyle & { customer: Customer; factory: Factory })[]>([]);
-  const [loading, setLoading] = useState(true);
+  const [rows, setRows] = useState<LotRow[]>(buildRows(MOCK_ORDER_LOTS));
   const [search, setSearch] = useState('');
   const [filterStatus, setFilterStatus] = useState('active');
   const [showModal, setShowModal] = useState(false);
   const [editId, setEditId] = useState<string | null>(null);
   const [form, setForm] = useState<FormState>(empty);
-  const [saving, setSaving] = useState(false);
   const [error, setError] = useState('');
 
-  const load = useCallback(async () => {
-    setLoading(true);
-    const [{ data: lots }, { data: logs }, { data: stylesData }] = await Promise.all([
-      supabase.from('order_lots').select(`*, product_styles!inner(*, customers!inner(*), factories!inner(*))`).order('created_at', { ascending: false }),
-      supabase.from('quantity_logs').select('order_lot_id, quantity'),
-      supabase.from('product_styles').select('*, customers!inner(*), factories!inner(*)').eq('active', true),
-    ]);
-
-    const totals: Record<string, number> = {};
-    logs?.forEach((l: any) => { totals[l.order_lot_id] = (totals[l.order_lot_id] || 0) + l.quantity; });
-
-    setStyles((stylesData ?? []).map((s: any) => ({ ...s, customer: s.customers, factory: s.factories })));
-    setRows((lots ?? []).map((l: any) => ({
-      ...l,
-      product_style: { ...l.product_styles, customer: l.product_styles.customers, factory: l.product_styles.factories },
-      produced_qty: totals[l.id] || 0,
-    })));
-    setLoading(false);
-  }, []);
-
-  useEffect(() => { load(); }, [load]);
+  const activeStyles = MOCK_PRODUCT_STYLES.filter(s => s.active).map(s => ({
+    ...s,
+    customer: MOCK_CUSTOMERS.find(c => c.id === s.customer_id)!,
+    factory: MOCK_FACTORIES.find(f => f.id === s.factory_id)!,
+  }));
 
   const openCreate = () => { setEditId(null); setForm(empty); setError(''); setShowModal(true); };
   const openEdit = (r: LotRow) => {
@@ -83,29 +77,38 @@ export function OrderLotsTab() {
     setError(''); setShowModal(true);
   };
 
-  const save = async () => {
+  const save = () => {
     if (!form.product_style_id) { setError('Vui lòng chọn mã hàng'); return; }
     const qty = parseInt(form.order_qty);
     if (isNaN(qty) || qty < 0) { setError('Số lượng order không hợp lệ'); return; }
-    setSaving(true); setError('');
-    const payload = {
-      product_style_id: form.product_style_id, lot_code: form.lot_code.trim(),
-      contract_no: form.contract_no.trim(), debit_group: form.debit_group.trim(),
-      order_qty: qty, unit_price: parseFloat(form.unit_price) || 0,
-      currency: form.currency, delivery_date: form.delivery_date || null,
-      status: form.status, notes: form.notes.trim(),
+    const style = activeStyles.find(s => s.id === form.product_style_id)!;
+    const payload: OrderLot = {
+      id: editId ?? `lot-${Date.now()}`,
+      product_style_id: form.product_style_id,
+      customer_id: style.customer_id,
+      factory_id: style.factory_id,
+      lot_code: form.lot_code.trim(),
+      contract_no: form.contract_no.trim(),
+      debit_group: form.debit_group.trim(),
+      order_qty: qty,
+      unit_price: parseFloat(form.unit_price) || 0,
+      currency: form.currency,
+      delivery_date: form.delivery_date || null,
+      status: form.status,
+      notes: form.notes.trim(),
+      created_at: new Date().toISOString(),
+      updated_at: new Date().toISOString(),
+      created_by: 'user-001',
+      updated_by: null,
     };
-    const styleRow = styles.find(s => s.id === form.product_style_id);
-    const fullPayload = styleRow
-      ? { ...payload, customer_id: styleRow.customer_id, factory_id: styleRow.factory_id }
-      : payload;
-
-    const { error: e } = editId
-      ? await supabase.from('order_lots').update(payload).eq('id', editId)
-      : await supabase.from('order_lots').insert(fullPayload as any);
-    if (e) setError(e.message);
-    else { setShowModal(false); load(); }
-    setSaving(false);
+    const existingProduced = editId ? (rows.find(r => r.id === editId)?.produced_qty ?? 0) : 0;
+    const newRow: LotRow = { ...payload, product_style: style, produced_qty: existingProduced };
+    if (editId) {
+      setRows(prev => prev.map(r => r.id === editId ? newRow : r));
+    } else {
+      setRows(prev => [newRow, ...prev]);
+    }
+    setShowModal(false);
   };
 
   const filtered = rows.filter(r => {
@@ -135,9 +138,7 @@ export function OrderLotsTab() {
         )}
       </div>
 
-      {loading ? (
-        <div className="space-y-2">{[...Array(4)].map((_, i) => <div key={i} className="h-16 bg-slate-100 rounded-xl animate-pulse" />)}</div>
-      ) : filtered.length === 0 ? (
+      {filtered.length === 0 ? (
         <div className="py-16 text-center"><ShoppingCart className="w-10 h-10 text-slate-200 mx-auto mb-2" /><p className="text-slate-400 text-sm">Chưa có đơn hàng nào</p></div>
       ) : (
         <div className="space-y-2">
@@ -187,7 +188,7 @@ export function OrderLotsTab() {
             <FormField label="Mã hàng" required>
               <select className={selectClass} value={form.product_style_id} onChange={e => setForm(f => ({ ...f, product_style_id: e.target.value }))}>
                 <option value="">Chọn mã hàng</option>
-                {styles.map(s => <option key={s.id} value={s.id}>{s.style_code}{s.name ? ` — ${s.name}` : ''} ({s.customer.name})</option>)}
+                {activeStyles.map(s => <option key={s.id} value={s.id}>{s.style_code}{s.name ? ` — ${s.name}` : ''} ({s.customer.name})</option>)}
               </select>
             </FormField>
             <div className="grid grid-cols-2 gap-3">
@@ -233,7 +234,7 @@ export function OrderLotsTab() {
             </FormField>
             <div className="flex gap-3 pt-2">
               <button onClick={() => setShowModal(false)} className="flex-1 py-2.5 border border-slate-200 text-slate-600 rounded-xl text-sm font-medium hover:bg-slate-50">Hủy</button>
-              <button onClick={save} disabled={saving} className="flex-1 py-2.5 bg-blue-600 hover:bg-blue-700 disabled:bg-blue-400 text-white rounded-xl text-sm font-medium">{saving ? 'Đang lưu...' : 'Lưu'}</button>
+              <button onClick={save} className="flex-1 py-2.5 bg-blue-600 hover:bg-blue-700 text-white rounded-xl text-sm font-medium">Lưu</button>
             </div>
           </div>
         </Modal>
