@@ -2,7 +2,7 @@ import type {
   Profile, Customer, Factory, ProductTypeRecord, ProductStyle,
   OrderLot, QuantityLog, InspectionSession, InspectionLine,
   DebitNote, DebitNoteItem, ImportJob, AuditLog, ApprovalLog,
-  DefectCatalog, DefectCatalogItem, ReportTemplate, PriceRule, UserFactoryPermission,
+  DefectCatalog, DefectCatalogItem, ReportTemplate, PriceRule,
 } from './database.types';
 
 export const MOCK_PROFILE: Profile = {
@@ -148,12 +148,6 @@ export const MOCK_PRICE_RULES: PriceRule[] = [
   { id: 'price-002', customer_id: 'cust-001', factory_id: null, product_type_id: null, product_style_id: null, rule_type: 'first_inspection', unit_price: 12.5, currency: 'USD', effective_from: '2024-01-01', effective_to: null, priority: 2, active: true, notes: 'Giá kiểm Gardner', created_at: '2024-01-01T00:00:00Z', created_by: 'user-001' },
   { id: 'price-003', customer_id: null, factory_id: null, product_type_id: null, product_style_id: 'style-001', rule_type: 'first_inspection', unit_price: 7.0, currency: 'USD', effective_from: '2024-01-01', effective_to: '2024-12-31', priority: 3, active: true, notes: 'Giá riêng BR-1120', created_at: '2024-01-15T00:00:00Z', created_by: 'user-001' },
   { id: 'price-004', customer_id: null, factory_id: null, product_type_id: null, product_style_id: null, rule_type: 'reinspection', unit_price: 12.0, currency: 'USD', effective_from: '2024-01-01', effective_to: null, priority: 1, active: true, notes: 'Giá tái kiểm mặc định', created_at: '2024-01-01T00:00:00Z', created_by: 'user-001' },
-];
-
-export const MOCK_USER_PERMISSIONS: UserFactoryPermission[] = [
-  { id: 'perm-001', user_id: 'user-002', factory_id: 'factory-001', access_level: 'read_write', created_at: '2024-01-01T00:00:00Z', created_by: 'user-001' },
-  { id: 'perm-002', user_id: 'user-002', factory_id: 'factory-002', access_level: 'read_only', created_at: '2024-01-01T00:00:00Z', created_by: 'user-001' },
-  { id: 'perm-003', user_id: 'user-003', factory_id: 'factory-001', access_level: 'read_only', created_at: '2024-01-10T00:00:00Z', created_by: 'user-001' },
 ];
 
 export const MOCK_USERS = [

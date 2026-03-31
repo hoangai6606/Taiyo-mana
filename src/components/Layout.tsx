@@ -2,38 +2,33 @@ import { useState } from 'react';
 import {
   Factory,
   LayoutDashboard,
-  TrendingUp,
   ClipboardCheck,
-  Database,
+  FileText,
   LogOut,
   Menu,
   X,
   ChevronRight,
   User,
-  FileUp,
-  Receipt,
   Shield,
+  XCircle,
 } from 'lucide-react';
 import { useAuth } from '../contexts/AuthContext';
 import { ROLE_LABELS } from '../lib/database.types';
 
-export type PageKey = 'dashboard' | 'production' | 'inspection' | 'master' | 'import' | 'debit' | 'audit';
+export type PageKey = 'dashboard' | 'inspection' | 'debit' | 'admin';
 
 interface NavItem {
   key: PageKey;
   label: string;
   icon: React.ElementType;
   roles?: string[];
+  superAdminOnly?: boolean;
 }
 
 const NAV_ITEMS: NavItem[] = [
   { key: 'dashboard', label: 'Tổng quan', icon: LayoutDashboard },
-  { key: 'production', label: 'Sản xuất', icon: TrendingUp },
-  { key: 'inspection', label: 'Kiểm hàng', icon: ClipboardCheck },
-  { key: 'import', label: 'Import CSV', icon: FileUp },
-  { key: 'debit', label: 'Debit Note', icon: Receipt, roles: ['manager', 'accounting_admin'] },
-  { key: 'master', label: 'Dữ liệu gốc', icon: Database },
-  { key: 'audit', label: 'Audit Log', icon: Shield, roles: ['manager', 'accounting_admin'] },
+  { key: 'inspection', label: 'Dữ liệu', icon: ClipboardCheck },
+  { key: 'debit', label: 'Debit Note', icon: FileText },
 ];
 
 interface LayoutProps {
@@ -43,10 +38,15 @@ interface LayoutProps {
 }
 
 export default function Layout({ currentPage, onNavigate, children }: LayoutProps) {
-  const { profile, signOut, role } = useAuth();
+  const { profile, signOut, role, isSuperAdmin, isImpersonating, impersonatingWorkspace, exitImpersonation } = useAuth();
   const [mobileOpen, setMobileOpen] = useState(false);
 
-  const visibleNav = NAV_ITEMS.filter(item => !item.roles || (role && item.roles.includes(role)));
+  const visibleNav = NAV_ITEMS.filter(item => {
+    if (item.roles && (!role || !item.roles.includes(role))) return false;
+    // Super admin chưa impersonate thì ẩn dashboard/inspection/debit
+    if (isSuperAdmin && !isImpersonating) return false;
+    return true;
+  });
 
   const Sidebar = () => (
     <div className="flex flex-col h-full bg-slate-900">
@@ -79,6 +79,20 @@ export default function Layout({ currentPage, onNavigate, children }: LayoutProp
             </button>
           );
         })}
+        {isSuperAdmin && (
+          <button
+            onClick={() => { onNavigate('admin'); setMobileOpen(false); }}
+            className={`w-full flex items-center gap-3 px-3 py-2.5 rounded-xl text-sm font-medium transition-all ${
+              currentPage === 'admin'
+                ? 'bg-purple-600 text-white shadow-lg shadow-purple-900/30'
+                : 'text-slate-400 hover:text-white hover:bg-slate-800'
+            }`}
+          >
+            <Shield className="w-5 h-5 shrink-0" />
+            <span className="flex-1 text-left">Super Admin</span>
+            {currentPage === 'admin' && <ChevronRight className="w-4 h-4" />}
+          </button>
+        )}
       </nav>
 
       <div className="px-3 py-4 border-t border-slate-700">
@@ -118,6 +132,20 @@ export default function Layout({ currentPage, onNavigate, children }: LayoutProp
       )}
 
       <div className="flex-1 flex flex-col overflow-hidden">
+        {isImpersonating && impersonatingWorkspace && (
+          <div className="bg-amber-500 text-white px-4 py-2 flex items-center justify-between">
+            <span className="text-sm font-medium">
+              Bạn đang xem thông tin của workspace "{impersonatingWorkspace.name}"
+            </span>
+            <button
+              onClick={exitImpersonation}
+              className="flex items-center gap-1 px-3 py-1 bg-amber-600 hover:bg-amber-700 rounded-lg text-sm font-medium"
+            >
+              <XCircle className="w-4 h-4" />
+              Thoát
+            </button>
+          </div>
+        )}
         <header className="lg:hidden bg-white border-b border-slate-200 px-4 py-3 flex items-center gap-3">
           <button onClick={() => setMobileOpen(true)} className="p-2 rounded-lg hover:bg-slate-100 text-slate-600">
             {mobileOpen ? <X className="w-5 h-5" /> : <Menu className="w-5 h-5" />}

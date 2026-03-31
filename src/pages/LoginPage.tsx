@@ -2,11 +2,8 @@ import { useState } from 'react';
 import { useAuth } from '../contexts/AuthContext';
 import { Factory, Eye, EyeOff, AlertCircle } from 'lucide-react';
 
-type Tab = 'login' | 'register';
-
 export default function LoginPage() {
-  const { signIn, signUp } = useAuth();
-  const [tab, setTab] = useState<Tab>('login');
+  const { signIn } = useAuth();
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState('');
   const [showPassword, setShowPassword] = useState(false);
@@ -14,12 +11,9 @@ export default function LoginPage() {
   const [form, setForm] = useState({
     email: '',
     password: '',
-    name_vn: '',
-    name_jp: '',
-    role: 'staff',
   });
 
-  const handleChange = (e: React.ChangeEvent<HTMLInputElement | HTMLSelectElement>) => {
+  const handleChange = (e: React.ChangeEvent<HTMLInputElement>) => {
     setForm(f => ({ ...f, [e.target.name]: e.target.value }));
     setError('');
   };
@@ -29,23 +23,8 @@ export default function LoginPage() {
     setLoading(true);
     setError('');
 
-    if (tab === 'login') {
-      const { error } = await signIn(form.email, form.password);
-      if (error) setError(error.message);
-    } else {
-      if (!form.name_vn.trim()) {
-        setError('Vui lòng nhập tên tiếng Việt');
-        setLoading(false);
-        return;
-      }
-      const { error } = await signUp(form.email, form.password, {
-        name_vn: form.name_vn,
-        name_jp: form.name_jp,
-        role: form.role,
-      });
-      if (error) setError(error.message);
-      else setError('Đăng ký thành công! Hãy đăng nhập.');
-    }
+    const { error } = await signIn(form.email, form.password);
+    if (error) setError(error.message || error);
     setLoading(false);
   };
 
@@ -61,75 +40,12 @@ export default function LoginPage() {
         </div>
 
         <div className="bg-white rounded-2xl shadow-2xl overflow-hidden">
-          <div className="flex">
-            <button
-              onClick={() => { setTab('login'); setError(''); }}
-              className={`flex-1 py-4 text-sm font-semibold transition-colors ${tab === 'login' ? 'bg-blue-600 text-white' : 'bg-slate-50 text-slate-500 hover:bg-slate-100'}`}
-            >
-              Đăng nhập
-            </button>
-            <button
-              onClick={() => { setTab('register'); setError(''); }}
-              className={`flex-1 py-4 text-sm font-semibold transition-colors ${tab === 'register' ? 'bg-blue-600 text-white' : 'bg-slate-50 text-slate-500 hover:bg-slate-100'}`}
-            >
-              Đăng ký
-            </button>
-          </div>
-
           <form onSubmit={handleSubmit} className="p-8 space-y-5">
             {error && (
-              <div className={`flex items-start gap-2 p-3 rounded-lg text-sm ${error.includes('thành công') ? 'bg-green-50 text-green-700 border border-green-200' : 'bg-red-50 text-red-700 border border-red-200'}`}>
+              <div className="flex items-start gap-2 p-3 rounded-lg text-sm bg-red-50 text-red-700 border border-red-200">
                 <AlertCircle className="w-4 h-4 mt-0.5 shrink-0" />
                 {error}
               </div>
-            )}
-
-            {tab === 'register' && (
-              <>
-                <div>
-                  <label className="block text-sm font-medium text-slate-700 mb-1.5">
-                    Tên tiếng Việt <span className="text-red-500">*</span>
-                  </label>
-                  <input
-                    type="text"
-                    name="name_vn"
-                    value={form.name_vn}
-                    onChange={handleChange}
-                    placeholder="Nguyễn Văn A"
-                    className="w-full px-4 py-2.5 border border-slate-200 rounded-lg text-sm focus:outline-none focus:ring-2 focus:ring-blue-500 focus:border-transparent"
-                    required
-                  />
-                </div>
-                <div>
-                  <label className="block text-sm font-medium text-slate-700 mb-1.5">
-                    Tên tiếng Nhật
-                  </label>
-                  <input
-                    type="text"
-                    name="name_jp"
-                    value={form.name_jp}
-                    onChange={handleChange}
-                    placeholder="山田 太郎"
-                    className="w-full px-4 py-2.5 border border-slate-200 rounded-lg text-sm focus:outline-none focus:ring-2 focus:ring-blue-500 focus:border-transparent"
-                  />
-                </div>
-                <div>
-                  <label className="block text-sm font-medium text-slate-700 mb-1.5">
-                    Vai trò
-                  </label>
-                  <select
-                    name="role"
-                    value={form.role}
-                    onChange={handleChange}
-                    className="w-full px-4 py-2.5 border border-slate-200 rounded-lg text-sm focus:outline-none focus:ring-2 focus:ring-blue-500 focus:border-transparent"
-                  >
-                    <option value="staff">Nhân viên (Staff)</option>
-                    <option value="leader">Tổ trưởng (Leader)</option>
-                    <option value="manager">Quản lý (Manager)</option>
-                    <option value="accounting_admin">Kế toán (Accounting Admin)</option>
-                  </select>
-                </div>
-              </>
             )}
 
             <div>
@@ -173,8 +89,12 @@ export default function LoginPage() {
               disabled={loading}
               className="w-full py-3 bg-blue-600 hover:bg-blue-700 disabled:bg-blue-400 text-white font-semibold rounded-lg transition-colors text-sm"
             >
-              {loading ? 'Đang xử lý...' : tab === 'login' ? 'Đăng nhập' : 'Đăng ký'}
+              {loading ? 'Đang xử lý...' : 'Đăng nhập'}
             </button>
+
+            <p className="text-center text-sm text-slate-500">
+              Liên hệ quản trị viên để tạo tài khoản
+            </p>
           </form>
         </div>
       </div>
