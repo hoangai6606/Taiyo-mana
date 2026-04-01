@@ -42,15 +42,20 @@ export default function DebitNoteDetail({ debitNoteId, onClose }: Props) {
 
   if (!note) return null;
 
+  const fmt = (n: any): string => {
+    const num = typeof n === 'string' ? parseFloat(n) : (n || 0);
+    return (Math.round(num * 100) / 100).toLocaleString('vi-VN');
+  };
+
   const items = note.items || [];
   const goodsItems = items.filter(i => i.itemType === 'goods');
   const qcItems = items.filter(i => i.itemType === 'qc');
   const otItems = items.filter(i => i.itemType === 'ot');
 
-  const goodsTotal = goodsItems.reduce((s, i) => s + i.lineTotal, 0);
-  const qcTotal = qcItems.reduce((s, i) => s + i.lineTotal, 0);
-  const otTotal = otItems.reduce((s, i) => s + i.lineTotal, 0);
-  const travel = note.travelAllowance || 0;
+  const goodsTotal = goodsItems.reduce((s, i) => s + Number(i.lineTotal), 0);
+  const qcTotal = qcItems.reduce((s, i) => s + Number(i.lineTotal), 0);
+  const otTotal = otItems.reduce((s, i) => s + Number(i.lineTotal), 0);
+  const travel = Number(note.travelAllowance) || 0;
   const grandTotal = goodsTotal + qcTotal + otTotal + travel;
 
   // Merge QC and OT items by date (productCode holds date for QC/OT)
@@ -120,7 +125,7 @@ export default function DebitNoteDetail({ debitNoteId, onClose }: Props) {
             {/* Goods table */}
             <div>
               <h3 className="text-sm font-semibold text-slate-700 mb-2">Theo hàng hóa</h3>
-              <div className="border border-slate-200 rounded-lg overflow-hidden">
+              <div className="border border-slate-200 rounded-lg overflow-x-auto">
                 <table className="w-full text-sm">
                   <thead className="bg-slate-50">
                     <tr>
@@ -136,9 +141,9 @@ export default function DebitNoteDetail({ debitNoteId, onClose }: Props) {
                       <tr key={item.id} className="border-t border-slate-100">
                         <td className="px-4 py-2">{idx + 1}</td>
                         <td className="px-4 py-2">{item.productCode || '-'}</td>
-                        <td className="px-4 py-2 text-right">{item.quantity.toLocaleString('vi-VN')}</td>
-                        <td className="px-4 py-2 text-right">{item.unitPrice.toLocaleString('vi-VN')}</td>
-                        <td className="px-4 py-2 text-right">{item.lineTotal.toLocaleString('vi-VN')}</td>
+                        <td className="px-4 py-2 text-right">{fmt(item.quantity)}</td>
+                        <td className="px-4 py-2 text-right">{fmt(item.unitPrice)}</td>
+                        <td className="px-4 py-2 text-right">{fmt(item.lineTotal)}</td>
                       </tr>
                     ))}
                     {goodsItems.length === 0 && (
@@ -148,7 +153,7 @@ export default function DebitNoteDetail({ debitNoteId, onClose }: Props) {
                     )}
                     <tr className="border-t border-slate-200 bg-slate-50">
                       <td colSpan={4} className="px-4 py-2 text-right font-medium">Tổng hàng hóa:</td>
-                      <td className="px-4 py-2 text-right font-medium">{goodsTotal.toLocaleString('vi-VN')}</td>
+                      <td className="px-4 py-2 text-right font-medium">{fmt(goodsTotal)}</td>
                     </tr>
                   </tbody>
                 </table>
@@ -177,12 +182,12 @@ export default function DebitNoteDetail({ debitNoteId, onClose }: Props) {
                       <tr key={idx} className="border-t border-slate-100">
                         <td className="px-3 py-2">{idx + 1}</td>
                         <td className="px-3 py-2">{date || '-'}</td>
-                        <td className="px-3 py-2 text-right">{entry.qc ? entry.qc.quantity.toLocaleString('vi-VN') : '-'}</td>
-                        <td className="px-3 py-2 text-right">{entry.qc ? entry.qc.unitPrice.toLocaleString('vi-VN') : '-'}</td>
-                        <td className="px-3 py-2 text-right">{entry.qc ? entry.qc.lineTotal.toLocaleString('vi-VN') : '-'}</td>
-                        <td className="px-3 py-2 text-right">{entry.ot ? entry.ot.quantity.toLocaleString('vi-VN') : '-'}</td>
-                        <td className="px-3 py-2 text-right">{entry.ot ? entry.ot.unitPrice.toLocaleString('vi-VN') : '-'}</td>
-                        <td className="px-3 py-2 text-right">{entry.ot ? entry.ot.lineTotal.toLocaleString('vi-VN') : '-'}</td>
+                        <td className="px-3 py-2 text-right">{entry.qc ? fmt(entry.qc.quantity) : '-'}</td>
+                        <td className="px-3 py-2 text-right">{entry.qc ? fmt(entry.qc.unitPrice) : '-'}</td>
+                        <td className="px-3 py-2 text-right">{entry.qc ? fmt(entry.qc.lineTotal) : '-'}</td>
+                        <td className="px-3 py-2 text-right">{entry.ot ? fmt(entry.ot.quantity) : '-'}</td>
+                        <td className="px-3 py-2 text-right">{entry.ot ? fmt(entry.ot.unitPrice) : '-'}</td>
+                        <td className="px-3 py-2 text-right">{entry.ot ? fmt(entry.ot.lineTotal) : '-'}</td>
                       </tr>
                     ))}
                     {dateMap.size === 0 && (
@@ -192,9 +197,9 @@ export default function DebitNoteDetail({ debitNoteId, onClose }: Props) {
                     )}
                     <tr className="border-t border-slate-200 bg-slate-50">
                       <td colSpan={4} className="px-3 py-2 text-right font-medium">Tổng QC:</td>
-                      <td className="px-3 py-2 text-right font-medium">{qcTotal.toLocaleString('vi-VN')}</td>
+                      <td className="px-3 py-2 text-right font-medium">{fmt(qcTotal)}</td>
                       <td colSpan={2} className="px-3 py-2 text-right font-medium">Tổng OT:</td>
-                      <td className="px-3 py-2 text-right font-medium">{otTotal.toLocaleString('vi-VN')}</td>
+                      <td className="px-3 py-2 text-right font-medium">{fmt(otTotal)}</td>
                     </tr>
                   </tbody>
                 </table>
@@ -205,7 +210,7 @@ export default function DebitNoteDetail({ debitNoteId, onClose }: Props) {
             {travel > 0 && (
               <div className="flex justify-between items-center px-4 py-3 bg-slate-50 rounded-lg">
                 <span className="font-medium text-slate-700">Tiền đi đường:</span>
-                <span className="font-semibold text-slate-900">{travel.toLocaleString('vi-VN')}</span>
+                <span className="font-semibold text-slate-900">{fmt(travel)}</span>
               </div>
             )}
 
@@ -213,7 +218,7 @@ export default function DebitNoteDetail({ debitNoteId, onClose }: Props) {
             <div className="bg-blue-50 border border-blue-200 rounded-lg p-4">
               <div className="flex justify-between items-center">
                 <span className="text-lg font-semibold text-blue-900">Tổng cộng:</span>
-                <span className="text-2xl font-bold text-blue-900">{grandTotal.toLocaleString('vi-VN')}</span>
+                <span className="text-2xl font-bold text-blue-900">{fmt(grandTotal)}</span>
               </div>
             </div>
           </div>

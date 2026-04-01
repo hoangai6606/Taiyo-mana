@@ -41,7 +41,7 @@ export default function DebitNotesPage() {
   };
 
   const calcTotal = (note: DebitNote): number => {
-    return (note.items || []).reduce((sum, i) => sum + i.lineTotal, 0) + (note.travelAllowance || 0);
+    return (note.items || []).reduce((sum, i) => sum + Number(i.lineTotal), 0) + Number(note.travelAllowance || 0);
   };
 
   const handleExport = async (id: string) => {
@@ -312,7 +312,7 @@ function CreateModal({ onClose, onCreated }: { onClose: () => void; onCreated: (
         for (const p of selectedRecord.productivity) {
           if (p.qcQuantity && p.qcQuantity > 0) {
             items.push({
-              productCode: '',
+              productCode: p.recordDate || '',
               size: '',
               quantity: p.qcQuantity,
               unitPrice: unitPriceQc,
@@ -330,7 +330,7 @@ function CreateModal({ onClose, onCreated }: { onClose: () => void; onCreated: (
         for (const p of selectedRecord.productivity) {
           if (p.ot && p.ot > 0) {
             items.push({
-              productCode: '',
+              productCode: p.recordDate || '',
               size: '',
               quantity: p.ot,
               unitPrice: unitPriceOt,

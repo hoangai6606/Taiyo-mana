@@ -36,7 +36,7 @@ const grandTotalStyle: XLSX.CellStyle = {
 };
 
 function fmt(n: number): string {
-  return n.toLocaleString('vi-VN');
+  return (Math.round(n * 100) / 100).toLocaleString('vi-VN');
 }
 
 export function exportDebitNote(note: DebitNote): void {
@@ -45,9 +45,9 @@ export function exportDebitNote(note: DebitNote): void {
   const qcItems = items.filter(i => i.itemType === 'qc');
   const otItems = items.filter(i => i.itemType === 'ot');
 
-  const goodsTotal = goodsItems.reduce((s, i) => s + i.lineTotal, 0);
-  const qcTotal = qcItems.reduce((s, i) => s + i.lineTotal, 0);
-  const otTotal = otItems.reduce((s, i) => s + i.lineTotal, 0);
+  const goodsTotal = goodsItems.reduce((s, i) => s + Number(i.lineTotal), 0);
+  const qcTotal = qcItems.reduce((s, i) => s + Number(i.lineTotal), 0);
+  const otTotal = otItems.reduce((s, i) => s + Number(i.lineTotal), 0);
   const travel = note.travelAllowance || 0;
   const grandTotal = goodsTotal + qcTotal + otTotal + travel;
 

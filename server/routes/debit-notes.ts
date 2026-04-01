@@ -11,7 +11,7 @@ const sql = neon(process.env.DATABASE_URL || '');
 
 const router = Router();
 
-// GET /api/debit-notes - List all debit notes with customer name
+// GET /api/debit-notes - List all debit notes with customer name and items
 router.get('/', authenticateToken, async (req: Request, res: Response) => {
   try {
     const workspaceId = getWorkspaceId(req);
@@ -48,22 +48,33 @@ router.get('/', authenticateToken, async (req: Request, res: Response) => {
       console.error('Debit notes query error (may be empty table):', queryErr);
     }
 
-    // Normalize IDs from byte array to UUID (Neon driver bug)
-    const result = notes.map(r => {
-      const normalizedId = isByteArrayString(r.id) ? convertByteArrayToUuid(r.id) : r.id;
-      const normalizedCustomerId = isByteArrayString(r.customerId) ? convertByteArrayToUuid(r.customerId) : r.customerId;
-      const normalizedInspectionRecordId = r.inspectionRecordId && isByteArrayString(r.inspectionRecordId)
-        ? convertByteArrayToUuid(r.inspectionRecordId)
-        : r.inspectionRecordId;
-      return {
-        ...r,
-        id: normalizedId,
-        customerId: normalizedCustomerId,
-        inspectionRecordId: normalizedInspectionRecordId,
-      };
-    });
+    // Fetch items for each debit note
+    const notesWithItems = await Promise.all(
+      notes.map(async (r) => {
+        // Normalize IDs from byte array to UUID (Neon driver bug)
+        const normalizedId = isByteArrayString(r.id) ? convertByteArrayToUuid(r.id) : r.id;
+        const normalizedCustomerId = isByteArrayString(r.customerId) ? convertByteArrayToUuid(r.customerId) : r.customerId;
+        const normalizedInspectionRecordId = r.inspectionRecordId && isByteArrayString(r.inspectionRecordId)
+          ? convertByteArrayToUuid(r.inspectionRecordId)
+          : r.inspectionRecordId;
 
-    res.json(result);
+        // Fetch items for this debit note
+        const items = await db
+          .select()
+          .from(debitNoteItems)
+          .where(eq(debitNoteItems.debitNoteId, normalizedId));
+
+        return {
+          ...r,
+          id: normalizedId,
+          customerId: normalizedCustomerId,
+          inspectionRecordId: normalizedInspectionRecordId,
+          items,
+        };
+      })
+    );
+
+    res.json(notesWithItems);
   } catch (err) {
     console.error(err);
     res.status(500).json({ error: 'Failed to fetch debit notes', details: err instanceof Error ? err.message : String(err) });
@@ -95,12 +106,20 @@ router.get('/:id', async (req: Request, res: Response) => {
         createdAt: debitNotes.createdAt,
         updatedAt: debitNotes.updatedAt,
         createdBy: debitNotes.createdBy,
+        workspaceId: debitNotes.workspaceId,
       })
       .from(debitNotes)
       .where(eq(debitNotes.id, id));
 
     if (!note) {
       res.status(404).json({ error: 'Debit note not found' });
+      return;
+    }
+
+    // Workspace filtering for multi-tenant security
+    const workspaceId = getWorkspaceId(req);
+    if (workspaceId !== null && note.workspaceId !== workspaceId) {
+      res.status(403).json({ error: 'Forbidden' });
       return;
     }
 
