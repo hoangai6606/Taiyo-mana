@@ -109,7 +109,19 @@ export interface InspectionItem {
   dirty: number;
   seamDefect: number;
   other: number;
+  printDefect: number;
+  soleDefect: number;
+  scratchDefect: number;
   metalCheck: number;
+  reinspectQuantity: number;
+  reinspectPassed: number;
+  reinspectFailed: number;
+  reinspectSpecifications: string;
+  reinspectAccessories: string;
+  reinspectAppearance: string;
+  reinspectPrintDefect: number;
+  reinspectSoleDefect: number;
+  reinspectScratchDefect: number;
 }
 
 export interface DailyReport {
@@ -144,6 +156,70 @@ export const ROLE_LABELS: Record<UserRole, string> = {
   super_admin: 'Super Admin',
 };
 
+// ─── INSPECTION REPORT TYPES ────────────────────────────────────────────────────
+
+export interface InspectionReport {
+  id: string;
+  code: string;
+  sourceRecordId: string | null;
+  customerName: string | null;
+  factoryNames: string | null;
+  inspectionDate: string | null;
+  status: 'draft' | 'finalized';
+  workspaceId: string | null;
+  createdAt: string;
+  updatedAt: string;
+  createdBy: string | null;
+  items?: ReportItem[];
+  productivity?: ReportProductivity[];
+}
+
+export interface ReportProductivity {
+  id: string;
+  reportId: string;
+  recordDate: string;
+  factoryId: string | null;
+  factoryName: string;
+  qcQuantity: number;
+  transitQuantity: number;
+  ot: number;
+}
+
+export interface ReportItem {
+  id: string;
+  reportId: string;
+  inspectionDate: string | null;
+  inspectionContent: string;
+  productCode: string;
+  brand: string;
+  productName: string;
+  color: string;
+  size: string;
+  inspectedQuantity: number;
+  passedQuantity: number;
+  defectiveQuantity: number;
+  specifications: number;
+  accessories: number;
+  appearance: number;
+  fabric: number;
+  dirty: number;
+  seamDefect: number;
+  other: number;
+  printDefect: number;
+  soleDefect: number;
+  scratchDefect: number;
+  metalCheck: number;
+  reinspectQuantity: number;
+  reinspectPassed: number;
+  reinspectFailed: number;
+  reinspectSpecifications: string;
+  reinspectAccessories: string;
+  reinspectAppearance: string;
+  reinspectPrintDefect: number;
+  reinspectSoleDefect: number;
+  reinspectScratchDefect: number;
+}
+
 // ─── DEBIT NOTE TYPES ─────────────────────────────────────────────────────────
 
 export interface DebitNote {
@@ -152,11 +228,18 @@ export interface DebitNote {
   customerId: string | null;
   customerName: string | null;
   inspectionRecordId: string | null;
+  inspectionReportId: string | null;
   unitPriceGoods: number;
   unitPriceQc: number;
   unitPriceOt: number;
   notes: string | null;
   travelAllowance?: number;
+  travelDays?: number;
+  travelUnitPrice?: number;
+  vehicleCount?: number;
+  travelHoursQty?: number;
+  travelHoursTime?: number;
+  travelHoursUnitPrice?: number;
   createdAt: string;
   updatedAt: string;
   createdBy: string | null;
@@ -172,6 +255,8 @@ export interface DebitNoteItem {
   unitPrice: number;
   lineTotal: number;
   itemType: 'goods' | 'qc' | 'ot';
+  hours: number | null;
+  inspectionContent: string | null;
 }
 
 // ─── FACTORY PRICE TYPES ─────────────────────────────────────────────────────

@@ -1,12 +1,13 @@
 import { Router, type Request, Response } from 'express';
 import { db } from '../db.js';
 import { neon } from '@neondatabase/serverless';
-import { debitNotes, debitNoteItems } from '../../drizzle/schema.js';
-import { eq } from 'drizzle-orm';
+import { debitNotes, debitNoteItems, inspectionReports } from '../../drizzle/schema.js';
+import { eq, inArray } from 'drizzle-orm';
 import { convertByteArrayToUuid, isByteArrayString } from '../utils/convertUuid.js';
 import { getWorkspaceId } from '../utils/workspace.js';
 import { authenticateToken } from '../auth/middleware.js';
 
+// Separate neon instance for raw SQL (code generation, COUNT queries)
 const sql = neon(process.env.DATABASE_URL || '');
 
 const router = Router();
@@ -18,61 +19,78 @@ router.get('/', authenticateToken, async (req: Request, res: Response) => {
 
     let notes: any[] = [];
     try {
-      const baseQuery = db
-        .select({
-          id: debitNotes.id,
-          debitNo: debitNotes.debitNo,
-          customerId: debitNotes.customerId,
-          customerName: debitNotes.customerName,
-          inspectionRecordId: debitNotes.inspectionRecordId,
-          unitPriceGoods: debitNotes.unitPriceGoods,
-          unitPriceQc: debitNotes.unitPriceQc,
-          unitPriceOt: debitNotes.unitPriceOt,
-          notes: debitNotes.notes,
-          travelAllowance: debitNotes.travelAllowance,
-          createdAt: debitNotes.createdAt,
-          updatedAt: debitNotes.updatedAt,
-          createdBy: debitNotes.createdBy,
-        })
-        .from(debitNotes);
+      const selectFields = {
+        id: debitNotes.id,
+        debitNo: debitNotes.debitNo,
+        customerId: debitNotes.customerId,
+        customerName: debitNotes.customerName,
+        inspectionRecordId: debitNotes.inspectionRecordId,
+        inspectionReportId: debitNotes.inspectionReportId,
+        unitPriceGoods: debitNotes.unitPriceGoods,
+        unitPriceQc: debitNotes.unitPriceQc,
+        unitPriceOt: debitNotes.unitPriceOt,
+        notes: debitNotes.notes,
+        travelAllowance: debitNotes.travelAllowance,
+        travelDays: debitNotes.travelDays,
+        travelUnitPrice: debitNotes.travelUnitPrice,
+        vehicleCount: debitNotes.vehicleCount,
+        travelHoursQty: debitNotes.travelHoursQty,
+        travelHoursTime: debitNotes.travelHoursTime,
+        travelHoursUnitPrice: debitNotes.travelHoursUnitPrice,
+        createdAt: debitNotes.createdAt,
+        updatedAt: debitNotes.updatedAt,
+        createdBy: debitNotes.createdBy,
+      };
 
       if (workspaceId) {
-        notes = await baseQuery.where(eq(debitNotes.workspaceId, workspaceId));
+        notes = await db.select(selectFields).from(debitNotes)
+          .where(eq(debitNotes.workspaceId, workspaceId));
       } else if (workspaceId === null) {
-        // Super admin — xem tất cả records
-        notes = await baseQuery;
+        notes = await db.select(selectFields).from(debitNotes);
       }
-      // else: không có workspace → trả về []
     } catch (queryErr) {
       // Neon driver bug trên bảng rỗng — trả về []
       console.error('Debit notes query error (may be empty table):', queryErr);
     }
 
-    // Fetch items for each debit note
-    const notesWithItems = await Promise.all(
-      notes.map(async (r) => {
-        // Normalize IDs from byte array to UUID (Neon driver bug)
-        const normalizedId = isByteArrayString(r.id) ? convertByteArrayToUuid(r.id) : r.id;
-        const normalizedCustomerId = isByteArrayString(r.customerId) ? convertByteArrayToUuid(r.customerId) : r.customerId;
-        const normalizedInspectionRecordId = r.inspectionRecordId && isByteArrayString(r.inspectionRecordId)
-          ? convertByteArrayToUuid(r.inspectionRecordId)
-          : r.inspectionRecordId;
+    // Fetch all items in 1 query instead of N+1
+    const normalizedNoteIds = notes.map(n => {
+      const nid = isByteArrayString(n.id) ? convertByteArrayToUuid(n.id) : n.id;
+      return nid;
+    });
 
-        // Fetch items for this debit note
-        const items = await db
-          .select()
-          .from(debitNoteItems)
-          .where(eq(debitNoteItems.debitNoteId, normalizedId));
+    const allItems = normalizedNoteIds.length > 0
+      ? await db.select().from(debitNoteItems)
+          .where(inArray(debitNoteItems.debitNoteId, normalizedNoteIds))
+      : [];
 
-        return {
-          ...r,
-          id: normalizedId,
-          customerId: normalizedCustomerId,
-          inspectionRecordId: normalizedInspectionRecordId,
-          items,
-        };
-      })
-    );
+    // Group items by debitNoteId
+    const itemsByNoteId = new Map<string, any[]>();
+    for (const item of allItems) {
+      const key = isByteArrayString(item.debitNoteId) ? convertByteArrayToUuid(item.debitNoteId) : item.debitNoteId;
+      if (!itemsByNoteId.has(key)) itemsByNoteId.set(key, []);
+      itemsByNoteId.get(key)!.push(item);
+    }
+
+    const notesWithItems = notes.map(r => {
+      const normalizedId = isByteArrayString(r.id) ? convertByteArrayToUuid(r.id) : r.id;
+      const normalizedCustomerId = isByteArrayString(r.customerId) ? convertByteArrayToUuid(r.customerId) : r.customerId;
+      const normalizedInspectionRecordId = r.inspectionRecordId && isByteArrayString(r.inspectionRecordId)
+        ? convertByteArrayToUuid(r.inspectionRecordId)
+        : r.inspectionRecordId;
+      const normalizedInspectionReportId = r.inspectionReportId && isByteArrayString(r.inspectionReportId)
+        ? convertByteArrayToUuid(r.inspectionReportId)
+        : r.inspectionReportId;
+
+      return {
+        ...r,
+        id: normalizedId,
+        customerId: normalizedCustomerId,
+        inspectionRecordId: normalizedInspectionRecordId,
+        inspectionReportId: normalizedInspectionReportId,
+        items: itemsByNoteId.get(normalizedId) || [],
+      };
+    });
 
     res.json(notesWithItems);
   } catch (err) {
@@ -98,11 +116,18 @@ router.get('/:id', async (req: Request, res: Response) => {
         customerId: debitNotes.customerId,
         customerName: debitNotes.customerName,
         inspectionRecordId: debitNotes.inspectionRecordId,
+        inspectionReportId: debitNotes.inspectionReportId,
         unitPriceGoods: debitNotes.unitPriceGoods,
         unitPriceQc: debitNotes.unitPriceQc,
         unitPriceOt: debitNotes.unitPriceOt,
         notes: debitNotes.notes,
         travelAllowance: debitNotes.travelAllowance,
+        travelDays: debitNotes.travelDays,
+        travelUnitPrice: debitNotes.travelUnitPrice,
+        vehicleCount: debitNotes.vehicleCount,
+        travelHoursQty: debitNotes.travelHoursQty,
+        travelHoursTime: debitNotes.travelHoursTime,
+        travelHoursUnitPrice: debitNotes.travelHoursUnitPrice,
         createdAt: debitNotes.createdAt,
         updatedAt: debitNotes.updatedAt,
         createdBy: debitNotes.createdBy,
@@ -132,12 +157,16 @@ router.get('/:id', async (req: Request, res: Response) => {
     const normalizedInspectionRecordId = note.inspectionRecordId && isByteArrayString(note.inspectionRecordId)
       ? convertByteArrayToUuid(note.inspectionRecordId)
       : note.inspectionRecordId;
+    const normalizedInspectionReportId = note.inspectionReportId && isByteArrayString(note.inspectionReportId)
+      ? convertByteArrayToUuid(note.inspectionReportId)
+      : note.inspectionReportId;
 
     res.json({
       ...note,
       id: normalizedId,
       customerId: normalizedCustomerId,
       inspectionRecordId: normalizedInspectionRecordId,
+      inspectionReportId: normalizedInspectionReportId,
       items,
     });
   } catch (err) {
@@ -149,7 +178,7 @@ router.get('/:id', async (req: Request, res: Response) => {
 // POST /api/debit-notes - Create a new debit note with items
 router.post('/', authenticateToken, async (req: Request, res: Response) => {
   try {
-    const { customerId, customerName, inspectionRecordId, unitPriceGoods, unitPriceQc, unitPriceOt, notes, travelAllowance, items } = req.body;
+    const { customerId, customerName, inspectionRecordId, inspectionReportId, unitPriceGoods, unitPriceQc, unitPriceOt, notes, travelAllowance, travelDays, travelUnitPrice, vehicleCount, travelHoursQty, travelHoursTime, travelHoursUnitPrice, items } = req.body;
 
     // Generate UUID manually to avoid Neon driver RETURNING bug
     const noteId = crypto.randomUUID();
@@ -180,7 +209,33 @@ router.post('/', authenticateToken, async (req: Request, res: Response) => {
       ? convertByteArrayToUuid(inspectionRecordId)
       : inspectionRecordId;
 
+    // Convert inspectionReportId if it's a byte array string (Neon driver bug)
+    const convertedInspectionReportId = inspectionReportId && isByteArrayString(inspectionReportId)
+      ? convertByteArrayToUuid(inspectionReportId)
+      : inspectionReportId;
+
     const workspaceId = getWorkspaceId(req);
+
+    // Validate inspectionReportId belongs to same workspace
+    if (convertedInspectionReportId && workspaceId) {
+      const [report] = await db
+        .select({ workspaceId: inspectionReports.workspaceId })
+        .from(inspectionReports)
+        .where(eq(inspectionReports.id, convertedInspectionReportId));
+      if (!report) {
+        res.status(404).json({ error: 'Inspection report not found' });
+        return;
+      }
+      // Normalize workspaceId from DB (Neon driver byte array bug)
+      const reportWorkspaceId = isByteArrayString(report.workspaceId as string)
+        ? convertByteArrayToUuid(report.workspaceId as string)
+        : report.workspaceId;
+      if (reportWorkspaceId !== workspaceId) {
+        res.status(403).json({ error: 'Inspection report does not belong to your workspace' });
+        return;
+      }
+    }
+
     let mainRecordInserted = false;
 
     try {
@@ -191,11 +246,18 @@ router.post('/', authenticateToken, async (req: Request, res: Response) => {
         customerId: convertedCustomerId,
         customerName: customerName || '',
         inspectionRecordId: convertedInspectionRecordId,
+        inspectionReportId: convertedInspectionReportId,
         unitPriceGoods: String(unitPriceGoods ?? 0),
         unitPriceQc: String(unitPriceQc ?? 0),
         unitPriceOt: String(unitPriceOt ?? 0),
         notes: notes || '',
         travelAllowance: String(travelAllowance ?? 0),
+        travelDays: String(travelDays ?? 0),
+        travelUnitPrice: String(travelUnitPrice ?? 0),
+        vehicleCount: String(vehicleCount ?? 0),
+        travelHoursQty: String(travelHoursQty ?? 0),
+        travelHoursTime: String(travelHoursTime ?? 0),
+        travelHoursUnitPrice: String(travelHoursUnitPrice ?? 0),
         workspaceId,
       });
       mainRecordInserted = true;
@@ -212,6 +274,8 @@ router.post('/', authenticateToken, async (req: Request, res: Response) => {
             unitPrice: String(item.unitPrice ?? 0),
             lineTotal: String(item.lineTotal ?? 0),
             itemType: item.itemType || 'goods',
+            hours: item.hours != null ? String(item.hours) : null,
+            inspectionContent: item.inspectionContent || null,
           }))
         );
       }
@@ -233,15 +297,22 @@ router.post('/', authenticateToken, async (req: Request, res: Response) => {
       customerId: convertedCustomerId,
       customerName,
       inspectionRecordId: convertedInspectionRecordId,
+      inspectionReportId: convertedInspectionReportId,
       unitPriceGoods,
       unitPriceQc,
       unitPriceOt,
       notes,
       travelAllowance,
+      travelDays,
+      travelUnitPrice,
+      vehicleCount,
+      travelHoursQty,
+      travelHoursTime,
+      travelHoursUnitPrice,
       items,
     });
   } catch (err) {
-    console.error(err);
+    console.error('[POST /debit-notes] Error:', err);
     res.status(500).json({ error: 'Failed to create debit note', details: err instanceof Error ? err.message : String(err) });
   }
 });

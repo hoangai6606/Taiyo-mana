@@ -1,6 +1,6 @@
 import type {
   Profile, Customer, Factory, ProductTypeRecord, ProductStyle,
-  InspectionRecord, DebitNote, DebitNoteItem,
+  InspectionRecord, InspectionReport, DebitNote, DebitNoteItem,
   FactoryPrice, Workspace,
 } from './database.types';
 
@@ -84,6 +84,17 @@ export const api = {
     update: (id: string, data: Partial<InspectionRecord>) => request<InspectionRecord>(`/inspection-records/${id}`, { method: 'PUT', body: JSON.stringify(data) }),
     delete: (id: string) => request<void>(`/inspection-records/${id}`, { method: 'DELETE' }),
     deleteAll: () => request<{ success: boolean; message: string }>(`/inspection-records/all`, { method: 'DELETE' }),
+    getProductivityByCodes: (codes: string[]) =>
+      request<ProductivityTracking[]>(`/inspection-records/productivity-by-codes?codes=${codes.join(',')}`),
+  },
+
+  // Inspection Reports
+  inspectionReports: {
+    list: () => request<InspectionReport[]>(`/inspection-reports`),
+    getById: (id: string) => request<InspectionReport>(`/inspection-reports/${id}`),
+    create: (data: Partial<InspectionReport>) => request<InspectionReport>(`/inspection-reports`, { method: 'POST', body: JSON.stringify(data) }),
+    update: (id: string, data: Partial<InspectionReport>) => request<InspectionReport>(`/inspection-reports/${id}`, { method: 'PUT', body: JSON.stringify(data) }),
+    delete: (id: string) => request<void>(`/inspection-reports/${id}`, { method: 'DELETE' }),
   },
 
   // Debit Notes

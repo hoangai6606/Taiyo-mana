@@ -28,8 +28,8 @@ export default function DebitNoteDetail({ debitNoteId, onClose }: Props) {
     }
   };
 
-  const handleExport = () => {
-    if (note) exportDebitNote(note);
+  const handleExport = async () => {
+    if (note) await exportDebitNote(note);
   };
 
   if (loading) {
@@ -56,7 +56,14 @@ export default function DebitNoteDetail({ debitNoteId, onClose }: Props) {
   const qcTotal = qcItems.reduce((s, i) => s + Number(i.lineTotal), 0);
   const otTotal = otItems.reduce((s, i) => s + Number(i.lineTotal), 0);
   const travel = Number(note.travelAllowance) || 0;
-  const grandTotal = goodsTotal + qcTotal + otTotal + travel;
+  const travelDays = Number(note.travelDays) || 0;
+  const travelUnitPrice = Number(note.travelUnitPrice) || 0;
+  const vehicleCount = Number(note.vehicleCount) || 0;
+  const travelHoursQty = Number(note.travelHoursQty) || 0;
+  const travelHoursTime = Number(note.travelHoursTime) || 0;
+  const travelHoursUnitPrice = Number(note.travelHoursUnitPrice) || 0;
+  const travelHoursTotal = travelHoursQty * travelHoursTime * travelHoursUnitPrice;
+  const grandTotal = goodsTotal + qcTotal + otTotal + travel + travelHoursTotal;
 
   // Merge QC and OT items by date (productCode holds date for QC/OT)
   const dateMap = new Map<string, { qc?: DebitNoteItem; ot?: DebitNoteItem }>();
@@ -131,6 +138,7 @@ export default function DebitNoteDetail({ debitNoteId, onClose }: Props) {
                     <tr>
                       <th className="px-4 py-2 text-left font-medium text-slate-600 w-10">STT</th>
                       <th className="px-4 py-2 text-left font-medium text-slate-600">Mã hàng</th>
+                      <th className="px-4 py-2 text-left font-medium text-slate-600">Nội dung hàng kiểm</th>
                       <th className="px-4 py-2 text-right font-medium text-slate-600">Số lượng</th>
                       <th className="px-4 py-2 text-right font-medium text-slate-600">Đơn giá</th>
                       <th className="px-4 py-2 text-right font-medium text-slate-600">Thành tiền</th>
@@ -141,6 +149,7 @@ export default function DebitNoteDetail({ debitNoteId, onClose }: Props) {
                       <tr key={item.id} className="border-t border-slate-100">
                         <td className="px-4 py-2">{idx + 1}</td>
                         <td className="px-4 py-2">{item.productCode || '-'}</td>
+                        <td className="px-4 py-2">{item.inspectionContent || '-'}</td>
                         <td className="px-4 py-2 text-right">{fmt(item.quantity)}</td>
                         <td className="px-4 py-2 text-right">{fmt(item.unitPrice)}</td>
                         <td className="px-4 py-2 text-right">{fmt(item.lineTotal)}</td>
@@ -148,11 +157,11 @@ export default function DebitNoteDetail({ debitNoteId, onClose }: Props) {
                     ))}
                     {goodsItems.length === 0 && (
                       <tr>
-                        <td colSpan={5} className="px-4 py-4 text-center text-slate-400">Không có dữ liệu</td>
+                        <td colSpan={6} className="px-4 py-4 text-center text-slate-400">Không có dữ liệu</td>
                       </tr>
                     )}
                     <tr className="border-t border-slate-200 bg-slate-50">
-                      <td colSpan={4} className="px-4 py-2 text-right font-medium">Tổng hàng hóa:</td>
+                      <td colSpan={5} className="px-4 py-2 text-right font-medium">Tổng hàng hóa:</td>
                       <td className="px-4 py-2 text-right font-medium">{fmt(goodsTotal)}</td>
                     </tr>
                   </tbody>
@@ -169,9 +178,11 @@ export default function DebitNoteDetail({ debitNoteId, onClose }: Props) {
                     <tr>
                       <th className="px-3 py-2 text-left font-medium text-slate-600 w-10">STT</th>
                       <th className="px-3 py-2 text-left font-medium text-slate-600">Ngày</th>
+                      <th className="px-3 py-2 text-right font-medium text-slate-600">Số giờ QC</th>
                       <th className="px-3 py-2 text-right font-medium text-slate-600">SL QC</th>
                       <th className="px-3 py-2 text-right font-medium text-slate-600">Đơn giá QC</th>
                       <th className="px-3 py-2 text-right font-medium text-slate-600">Thành tiền</th>
+                      <th className="px-3 py-2 text-right font-medium text-slate-600">Số giờ OT</th>
                       <th className="px-3 py-2 text-right font-medium text-slate-600">SL OT</th>
                       <th className="px-3 py-2 text-right font-medium text-slate-600">Đơn giá OT</th>
                       <th className="px-3 py-2 text-right font-medium text-slate-600">Thành tiền OT</th>
@@ -182,9 +193,11 @@ export default function DebitNoteDetail({ debitNoteId, onClose }: Props) {
                       <tr key={idx} className="border-t border-slate-100">
                         <td className="px-3 py-2">{idx + 1}</td>
                         <td className="px-3 py-2">{date || '-'}</td>
+                        <td className="px-3 py-2 text-right">{entry.qc?.hours ? fmt(entry.qc.hours) : '-'}</td>
                         <td className="px-3 py-2 text-right">{entry.qc ? fmt(entry.qc.quantity) : '-'}</td>
                         <td className="px-3 py-2 text-right">{entry.qc ? fmt(entry.qc.unitPrice) : '-'}</td>
                         <td className="px-3 py-2 text-right">{entry.qc ? fmt(entry.qc.lineTotal) : '-'}</td>
+                        <td className="px-3 py-2 text-right">{entry.ot?.hours ? fmt(entry.ot.hours) : '-'}</td>
                         <td className="px-3 py-2 text-right">{entry.ot ? fmt(entry.ot.quantity) : '-'}</td>
                         <td className="px-3 py-2 text-right">{entry.ot ? fmt(entry.ot.unitPrice) : '-'}</td>
                         <td className="px-3 py-2 text-right">{entry.ot ? fmt(entry.ot.lineTotal) : '-'}</td>
@@ -192,13 +205,13 @@ export default function DebitNoteDetail({ debitNoteId, onClose }: Props) {
                     ))}
                     {dateMap.size === 0 && (
                       <tr>
-                        <td colSpan={8} className="px-3 py-4 text-center text-slate-400">Không có dữ liệu</td>
+                        <td colSpan={10} className="px-3 py-4 text-center text-slate-400">Không có dữ liệu</td>
                       </tr>
                     )}
                     <tr className="border-t border-slate-200 bg-slate-50">
-                      <td colSpan={4} className="px-3 py-2 text-right font-medium">Tổng QC:</td>
+                      <td colSpan={5} className="px-3 py-2 text-right font-medium">Tổng QC:</td>
                       <td className="px-3 py-2 text-right font-medium">{fmt(qcTotal)}</td>
-                      <td colSpan={2} className="px-3 py-2 text-right font-medium">Tổng OT:</td>
+                      <td colSpan={3} className="px-3 py-2 text-right font-medium">Tổng OT:</td>
                       <td className="px-3 py-2 text-right font-medium">{fmt(otTotal)}</td>
                     </tr>
                   </tbody>
@@ -208,9 +221,29 @@ export default function DebitNoteDetail({ debitNoteId, onClose }: Props) {
 
             {/* Travel allowance */}
             {travel > 0 && (
-              <div className="flex justify-between items-center px-4 py-3 bg-slate-50 rounded-lg">
-                <span className="font-medium text-slate-700">Tiền đi đường:</span>
-                <span className="font-semibold text-slate-900">{fmt(travel)}</span>
+              <div className="px-4 py-3 bg-slate-50 rounded-lg">
+                <div className="flex justify-between items-center">
+                  <span className="font-medium text-slate-700">Tiền đi đường:</span>
+                  <span className="font-semibold text-slate-900">{fmt(travel)}</span>
+                </div>
+                {travelDays > 0 && travelUnitPrice > 0 && vehicleCount > 0 && (
+                  <p className="text-xs text-slate-500 mt-1">
+                    {travelDays} ngày x {fmt(travelUnitPrice)} đ x {fmt(vehicleCount)} xe
+                  </p>
+                )}
+              </div>
+            )}
+
+            {/* Travel hours */}
+            {travelHoursTotal > 0 && (
+              <div className="px-4 py-3 bg-slate-50 rounded-lg">
+                <div className="flex justify-between items-center">
+                  <span className="font-medium text-slate-700">Giờ đi đường:</span>
+                  <span className="font-semibold text-slate-900">{fmt(travelHoursTotal)}</span>
+                </div>
+                <p className="text-xs text-slate-500 mt-1">
+                  {fmt(travelHoursQty)} SL x {fmt(travelHoursTime)} thời gian x {fmt(travelHoursUnitPrice)} đ
+                </p>
               </div>
             )}
 

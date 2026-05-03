@@ -59,6 +59,12 @@ export default function InspectionDetail({ record, onBack }: Props) {
     });
   }, [items]);
 
+  const totals = useMemo(() => ({
+    passedQuantity: sortedItems.reduce((s, i) => s + (i.passedQuantity || 0), 0),
+    reinspectQuantity: sortedItems.reduce((s, i) => s + (i.reinspectQuantity || 0), 0),
+    metalCheck: sortedItems.reduce((s, i) => s + (i.metalCheck || 0), 0),
+  }), [sortedItems]);
+
   return (
     <div>
       <div className="mb-6">
@@ -117,21 +123,34 @@ export default function InspectionDetail({ record, onBack }: Props) {
             <table className="w-full text-sm">
               <thead className="bg-slate-50">
                 <tr>
-                  <th className="px-3 py-2 text-left font-semibold text-slate-700">Ngày KT</th>
-                  <th className="px-3 py-2 text-left font-semibold text-slate-700">Mã hàng</th>
-                  <th className="px-3 py-2 text-left font-semibold text-slate-700">Màu</th>
-                  <th className="px-3 py-2 text-left font-semibold text-slate-700">Size</th>
-                  <th className="px-3 py-2 text-right font-semibold text-slate-700">SL KT</th>
-                  <th className="px-3 py-2 text-right font-semibold text-slate-700">Hàng đạt</th>
-                  <th className="px-3 py-2 text-right font-semibold text-slate-700">Hàng hư</th>
-                  <th className="px-3 py-2 text-right font-semibold text-slate-700">Thông số</th>
-                  <th className="px-3 py-2 text-right font-semibold text-slate-700">Phụ liệu</th>
-                  <th className="px-3 py-2 text-right font-semibold text-slate-700">Ngoại quan</th>
-                  <th className="px-3 py-2 text-right font-semibold text-slate-700">Vải</th>
-                  <th className="px-3 py-2 text-right font-semibold text-slate-700">Dơ</th>
-                  <th className="px-3 py-2 text-right font-semibold text-slate-700">Lỗi may</th>
-                  <th className="px-3 py-2 text-right font-semibold text-slate-700">Khác</th>
-                  <th className="px-3 py-2 text-right font-semibold text-slate-700">Kiểm kim</th>
+                  <th className="px-3 py-2 text-left font-semibold text-slate-700" rowSpan={2}>Ngày KT</th>
+                  <th className="px-3 py-2 text-left font-semibold text-slate-700" rowSpan={2}>Mã hàng</th>
+                  <th className="px-3 py-2 text-left font-semibold text-slate-700" rowSpan={2}>Màu</th>
+                  <th className="px-3 py-2 text-left font-semibold text-slate-700" rowSpan={2}>Size</th>
+                  <th className="px-3 py-2 text-center font-semibold text-blue-700 bg-blue-50" colSpan={13}>KIỂM HÀNG</th>
+                  <th className="px-3 py-2 text-center font-semibold text-orange-700 bg-orange-50" colSpan={6}>TÁI KIỂM</th>
+                  <th className="px-3 py-2 text-center font-semibold text-slate-700 bg-green-50" rowSpan={2}>Kiểm Kim</th>
+                </tr>
+                <tr>
+                  <th className="px-3 py-1 text-right font-semibold text-slate-700 bg-blue-50">SL kiểm lần 1</th>
+                  <th className="px-3 py-1 text-right font-semibold text-slate-700 bg-blue-50">Hàng A1</th>
+                  <th className="px-3 py-1 text-right font-semibold text-slate-700 bg-blue-50">Hàng B1</th>
+                  <th className="px-3 py-1 text-right font-semibold text-slate-700 bg-blue-50">Thông số</th>
+                  <th className="px-3 py-1 text-right font-semibold text-slate-700 bg-blue-50">Phụ liệu</th>
+                  <th className="px-3 py-1 text-right font-semibold text-slate-700 bg-blue-50">Ngoại quan</th>
+                  <th className="px-3 py-1 text-right font-semibold text-slate-700 bg-blue-50">Vải</th>
+                  <th className="px-3 py-1 text-right font-semibold text-slate-700 bg-blue-50">Dơ</th>
+                  <th className="px-3 py-1 text-right font-semibold text-slate-700 bg-blue-50">Lỗi may</th>
+                  <th className="px-3 py-1 text-right font-semibold text-slate-700 bg-blue-50">Khác</th>
+                  <th className="px-3 py-1 text-right font-semibold text-slate-700 bg-blue-50">Lỗi in</th>
+                  <th className="px-3 py-1 text-right font-semibold text-slate-700 bg-blue-50">Lỗi sole</th>
+                  <th className="px-3 py-1 text-right font-semibold text-slate-700 bg-blue-50">Lỗi trầy</th>
+                  <th className="px-3 py-1 text-right font-semibold text-slate-700 bg-orange-50">Tổng Tái</th>
+                  <th className="px-3 py-1 text-right font-semibold text-slate-700 bg-orange-50">Hàng A2</th>
+                  <th className="px-3 py-1 text-right font-semibold text-slate-700 bg-orange-50">Hàng B2</th>
+                  <th className="px-3 py-1 text-right font-semibold text-slate-700 bg-orange-50">Thông số</th>
+                  <th className="px-3 py-1 text-right font-semibold text-slate-700 bg-orange-50">Phụ liệu</th>
+                  <th className="px-3 py-1 text-right font-semibold text-slate-700 bg-orange-50">Ngoại quan</th>
                 </tr>
               </thead>
               <tbody className="divide-y divide-slate-100">
@@ -141,6 +160,7 @@ export default function InspectionDetail({ record, onBack }: Props) {
                     <td className="px-3 py-2 text-slate-600">{item.productCode}</td>
                     <td className="px-3 py-2 text-slate-600">{item.color}</td>
                     <td className="px-3 py-2 text-slate-600 font-medium">{item.size}</td>
+                    {/* KIỂM HÀNG */}
                     <td className="px-3 py-2 text-slate-600 text-right">{item.inspectedQuantity}</td>
                     <td className="px-3 py-2 text-slate-600 text-right">{item.passedQuantity}</td>
                     <td className="px-3 py-2 text-slate-600 text-right">{item.defectiveQuantity}</td>
@@ -151,10 +171,32 @@ export default function InspectionDetail({ record, onBack }: Props) {
                     <td className="px-3 py-2 text-slate-600 text-right">{item.dirty}</td>
                     <td className="px-3 py-2 text-slate-600 text-right">{item.seamDefect}</td>
                     <td className="px-3 py-2 text-slate-600 text-right">{item.other}</td>
-                    <td className="px-3 py-2 text-slate-600 text-right">{item.metalCheck}</td>
+                    <td className="px-3 py-2 text-slate-600 text-right">{item.printDefect || 0}</td>
+                    <td className="px-3 py-2 text-slate-600 text-right">{item.soleDefect || 0}</td>
+                    <td className="px-3 py-2 text-slate-600 text-right">{item.scratchDefect || 0}</td>
+                    {/* TÁI KIỂM */}
+                    <td className="px-3 py-2 text-slate-600 text-right">{item.reinspectQuantity || 0}</td>
+                    <td className="px-3 py-2 text-slate-600 text-right">{item.reinspectPassed || 0}</td>
+                    <td className="px-3 py-2 text-slate-600 text-right">{item.reinspectFailed || 0}</td>
+                    <td className="px-3 py-2 text-slate-600">{item.reinspectSpecifications || '-'}</td>
+                    <td className="px-3 py-2 text-slate-600">{item.reinspectAccessories || '-'}</td>
+                    <td className="px-3 py-2 text-slate-600">{item.reinspectAppearance || '-'}</td>
+                    {/* Kiểm Kim */}
+                    <td className="px-3 py-2 text-slate-600 text-right">{item.metalCheck || 0}</td>
                   </tr>
                 ))}
               </tbody>
+              <tfoot>
+                <tr className="bg-[#D9D9D9] font-bold">
+                  <td className="px-3 py-2" colSpan={4}>Tổng</td>
+                  <td className="px-3 py-2"></td>
+                  <td className="px-3 py-2 text-right">{totals.passedQuantity}</td>
+                  <td className="px-3 py-2" colSpan={11}></td>
+                  <td className="px-3 py-2 text-right">{totals.reinspectQuantity}</td>
+                  <td className="px-3 py-2" colSpan={5}></td>
+                  <td className="px-3 py-2 text-right">{totals.metalCheck}</td>
+                </tr>
+              </tfoot>
             </table>
           </div>
         )}

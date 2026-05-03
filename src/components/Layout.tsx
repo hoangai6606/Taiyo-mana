@@ -3,6 +3,7 @@ import {
   Factory,
   LayoutDashboard,
   ClipboardCheck,
+  FileCheck,
   FileText,
   LogOut,
   Menu,
@@ -15,7 +16,7 @@ import {
 import { useAuth } from '../contexts/AuthContext';
 import { ROLE_LABELS } from '../lib/database.types';
 
-export type PageKey = 'dashboard' | 'inspection' | 'debit' | 'admin';
+export type PageKey = 'dashboard' | 'inspection' | 'reports' | 'debit' | 'admin';
 
 interface NavItem {
   key: PageKey;
@@ -23,11 +24,13 @@ interface NavItem {
   icon: React.ElementType;
   roles?: string[];
   superAdminOnly?: boolean;
+  hidden?: boolean;
 }
 
 const NAV_ITEMS: NavItem[] = [
-  { key: 'dashboard', label: 'Tổng quan', icon: LayoutDashboard },
+  { key: 'dashboard', label: 'Tổng quan', icon: LayoutDashboard, hidden: true },
   { key: 'inspection', label: 'Dữ liệu', icon: ClipboardCheck },
+  { key: 'reports', label: 'Phiếu báo cáo', icon: FileCheck },
   { key: 'debit', label: 'Debit Note', icon: FileText },
 ];
 
@@ -42,6 +45,7 @@ export default function Layout({ currentPage, onNavigate, children }: LayoutProp
   const [mobileOpen, setMobileOpen] = useState(false);
 
   const visibleNav = NAV_ITEMS.filter(item => {
+    if (item.hidden) return false;
     if (item.roles && (!role || !item.roles.includes(role))) return false;
     // Super admin chưa impersonate thì ẩn dashboard/inspection/debit
     if (isSuperAdmin && !isImpersonating) return false;

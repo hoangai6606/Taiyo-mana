@@ -25,6 +25,13 @@ async function main() {
 
   const db = neon(process.env.DATABASE_URL);
 
+  // Skip if already seeded
+  const [{ count }] = await db`SELECT COUNT(*)::int as count FROM product_types`;
+  if (count > 0) {
+    console.log('Database already seeded — skipping.');
+    return;
+  }
+
   // Step 1: Insert product types
   console.log('Seeding product types...');
   for (const pt of mockData.MOCK_PRODUCT_TYPES) {

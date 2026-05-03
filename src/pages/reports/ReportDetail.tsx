@@ -1,6 +1,7 @@
 import { useState, useMemo, useCallback } from 'react';
-import { X, Download } from 'lucide-react';
-import type { InspectionRecord } from '../../lib/database.types';
+import { api } from '../../lib/api';
+import type { InspectionReport, ReportItem, ReportProductivity } from '../../lib/database.types';
+import type { InspectionItem } from '../../lib/database.types';
 import {
   buildGroups,
   exportInspectionReportFromGroups,
@@ -11,37 +12,37 @@ import {
   type Variant,
   type VRow,
 } from '../../lib/export-inspection-report';
+import { ArrowLeft, FileDown } from 'lucide-react';
 
 // Editable numeric fields
 type EditableField = 'inspectQty' | 'reinspectQty' | 'passedQty' | 'passedKk' | 'totalExport' | 'defectiveQty'
   | 'spec' | 'acc' | 'app' | 'fab' | 'dirty' | 'seam' | 'other' | 'print' | 'sole' | 'scratch' | 'metal'
-  | 'tkPassed' | 'tkFailed' | 'tkPrint' | 'tkSole' | 'tkScratch';
+  | 'tkPassed' | 'tkFailed';
 
 // Text fields for reinspection
 type TextField = 'tkSpec' | 'tkAcc' | 'tkApp';
 
 interface Props {
-  record: InspectionRecord;
-  onClose: () => void;
+  report: InspectionReport;
+  onBack: () => void;
 }
 
-export default function ReportPreviewModal({ record, onClose }: Props) {
+export default function ReportDetail({ report, onBack }: Props) {
+  const items = report.items || [];
+
   const [groups, setGroups] = useState<ProductGroup[]>(() =>
-    buildGroups(record.items || []),
+    buildGroups(items as unknown as InspectionItem[]),
   );
 
-  const dateStr = record.inspectionDate
-    ? new Date(record.inspectionDate).toLocaleDateString('vi-VN', {
+  const dateStr = report.inspectionDate
+    ? new Date(report.inspectionDate).toLocaleDateString('vi-VN', {
         day: '2-digit', month: '2-digit', year: 'numeric',
       })
     : '';
 
-  // Grand total — recomputed from current group totals
   const grandTotal = useMemo<VRow>(() => {
     const gt = zeroVRow();
-    for (const g of groups) {
-      addTo(gt, g.total);
-    }
+    for (const g of groups) addTo(gt, g.total);
     gt.rate = calcRate(gt);
     return gt;
   }, [groups]);
@@ -50,9 +51,7 @@ export default function ReportPreviewModal({ record, onClose }: Props) {
     return draft.map((g, idx) => {
       if (idx !== gi) return g;
       const gt = zeroVRow();
-      for (const v of g.variants) {
-        addTo(gt, v);
-      }
+      for (const v of g.variants) addTo(gt, v);
       gt.rate = calcRate(gt);
       return { ...g, total: gt };
     });
@@ -96,13 +95,22 @@ export default function ReportPreviewModal({ record, onClose }: Props) {
     [recalcGroup],
   );
 
-  const handleDownload = async () => {
+  const handleExport = async () => {
+    if (items.length === 0) {
+      alert('Báo cáo không có dữ liệu');
+      return;
+    }
     await exportInspectionReportFromGroups(groups, {
-      customerName: record.customerName || record.customerId,
-      factoryNames: record.factoryNames || '',
+      customerName: report.customerName || '',
+      factoryNames: report.factoryNames || '',
       dateStr,
-      code: record.code,
-    });
+      code: report.code,
+    }, report.productivity);
+  };
+
+  const formatDate = (d: string | null) => {
+    if (!d) return '';
+    return new Date(d).toLocaleDateString('vi-VN');
   };
 
   // Numeric fields for So luong group (2 cols)
@@ -143,75 +151,84 @@ export default function ReportPreviewModal({ record, onClose }: Props) {
   ];
 
   return (
-    <div className="fixed inset-0 z-50 bg-black/50 flex items-start justify-center pt-4 pb-4">
-      <div className="bg-white rounded-xl shadow-2xl w-[98vw] max-w-[1800px] flex flex-col" style={{ maxHeight: 'calc(100vh - 2rem)' }}>
-        {/* Header */}
-        <div className="flex items-center justify-between px-6 py-4 border-b shrink-0">
+    <div>
+      {/* Header */}
+      <div className="flex items-center justify-between mb-6">
+        <div className="flex items-center gap-3">
+          <button onClick={onBack} className="p-2 rounded-lg hover:bg-slate-200 text-slate-600">
+            <ArrowLeft className="w-5 h-5" />
+          </button>
           <div>
-            <h2 className="text-xl font-bold text-slate-900">Xem trước Báo Cáo</h2>
-            <p className="text-sm text-slate-500 mt-0.5">
-              KH: {record.customerName || record.customerId} | NM: {record.factoryNames || ''} | Ngày: {dateStr} | Mã phiếu: {record.code}
+            <h1 className="text-2xl font-bold text-slate-800">{report.code}</h1>
+            <p className="text-sm text-slate-500">
+              {report.customerName} — {report.factoryNames} — {formatDate(report.inspectionDate)}
             </p>
           </div>
-          <div className="flex items-center gap-3">
-            <button
-              onClick={handleDownload}
-              className="px-4 py-2 bg-emerald-600 text-white rounded-lg hover:bg-emerald-700 text-sm font-medium flex items-center gap-2"
-            >
-              <Download className="w-4 h-4" />
-              Tải Excel
-            </button>
-            <button
-              onClick={onClose}
-              className="p-2 text-slate-400 hover:text-slate-600 rounded-lg hover:bg-slate-100"
-            >
-              <X className="w-5 h-5" />
-            </button>
-          </div>
         </div>
+        <div className="flex items-center gap-3">
+          <span className={`px-3 py-1 rounded-full text-xs font-medium ${
+            report.status === 'finalized'
+              ? 'bg-green-100 text-green-700'
+              : 'bg-yellow-100 text-yellow-700'
+          }`}>
+            {report.status === 'finalized' ? 'Hoàn thành' : 'Nháp'}
+          </span>
+          <button
+            onClick={handleExport}
+            className="flex items-center gap-2 px-4 py-2 bg-blue-600 text-white rounded-lg hover:bg-blue-700 text-sm font-medium"
+          >
+            <FileDown className="w-4 h-4" />
+            Xuất Excel
+          </button>
+        </div>
+      </div>
 
-        {/* Table */}
-        <div className="flex-1 overflow-auto px-6 py-4">
-          <table className="w-full text-xs border-collapse min-w-[1200px]">
-            <thead className="sticky top-0 z-10">
-              {/* Group header row */}
-              <tr className="bg-[#4472C4] text-white">
-                <th className="border border-slate-400 px-2 py-1.5 text-center font-bold align-middle" rowSpan={2}>Mã hàng</th>
-                <th className="border border-slate-400 px-2 py-1.5 text-center font-bold align-middle" rowSpan={2}>Thương hiệu</th>
-                <th className="border border-slate-400 px-2 py-1.5 text-center font-bold align-middle" rowSpan={2}>Tên hàng</th>
-                <th className="border border-slate-400 px-2 py-1.5 text-center font-bold align-middle" rowSpan={2}>Màu</th>
-                <th className="border border-slate-400 px-2 py-1.5 text-center font-bold align-middle" rowSpan={2}>Size</th>
-                <th className="border border-slate-400 px-2 py-1 text-center font-bold" rowSpan={2}>SLĐH</th>
-                <th className="border border-slate-400 px-2 py-1 text-center font-bold" colSpan={2}>Số lượng</th>
-                <th className="border border-slate-400 px-2 py-1 text-center font-bold" colSpan={14}>KIỂM HÀNG</th>
-                <th className="border border-slate-400 px-2 py-1.5 text-center font-bold align-middle" rowSpan={2}>Tỉ lệ lỗi</th>
-                <th className="border border-[#E97451] px-2 py-1 text-center font-bold" colSpan={6}>TÁI KIỂM</th>
-              </tr>
-              {/* Detail header row */}
-              <tr className="bg-[#4472C4] text-white">
-                {qtyFields.map(f => (
-                  <th key={f.key} className="border border-slate-400 px-2 py-1 text-center font-bold">{f.label}</th>
-                ))}
-                {inspectFields.map(f => (
-                  <th key={f.key} className="border border-slate-400 px-2 py-1 text-center font-bold">{f.label}</th>
-                ))}
-                {reinspectNumFields.map(f => (
-                  <th key={f.key} className="border border-[#E97451] px-2 py-1 text-center font-bold">{f.label}</th>
-                ))}
-                {reinspectTextFields.map(f => (
-                  <th key={f.key} className="border border-[#E97451] px-2 py-1 text-center font-bold">{f.label}</th>
-                ))}
-              </tr>
-            </thead>
-            <tbody>
-              {groups.map((g, gi) => {
-                const vc = g.variants.length;
-                return (
+      {/* Grouped table */}
+      {items.length === 0 ? (
+        <div className="bg-white rounded-xl border border-slate-200 p-12 text-center">
+          <p className="text-slate-500">Báo cáo không có dữ liệu items</p>
+        </div>
+      ) : (
+        <div className="bg-white rounded-xl border border-slate-200 overflow-hidden">
+          <div className="overflow-x-auto">
+            <table className="w-full text-xs border-collapse min-w-[1200px]">
+              <thead className="sticky top-0 z-10">
+                {/* Group header row */}
+                <tr className="bg-[#4472C4] text-white">
+                  <th className="border border-slate-400 px-2 py-1.5 text-center font-bold align-middle" rowSpan={2}>Mã hàng</th>
+                  <th className="border border-slate-400 px-2 py-1.5 text-center font-bold align-middle" rowSpan={2}>Thương hiệu</th>
+                  <th className="border border-slate-400 px-2 py-1.5 text-center font-bold align-middle" rowSpan={2}>Tên hàng</th>
+                  <th className="border border-slate-400 px-2 py-1.5 text-center font-bold align-middle" rowSpan={2}>Màu</th>
+                  <th className="border border-slate-400 px-2 py-1.5 text-center font-bold align-middle" rowSpan={2}>Size</th>
+                  <th className="border border-slate-400 px-2 py-1 text-center font-bold" rowSpan={2}>SLĐH</th>
+                  <th className="border border-slate-400 px-2 py-1 text-center font-bold" colSpan={2}>Số lượng</th>
+                  <th className="border border-slate-400 px-2 py-1 text-center font-bold" colSpan={14}>KIỂM HÀNG</th>
+                  <th className="border border-slate-400 px-2 py-1.5 text-center font-bold align-middle" rowSpan={2}>Tỉ lệ lỗi</th>
+                  <th className="border border-[#E97451] px-2 py-1 text-center font-bold" colSpan={6}>TÁI KIỂM</th>
+                </tr>
+                {/* Detail header row */}
+                <tr className="bg-[#4472C4] text-white">
+                  {qtyFields.map(f => (
+                    <th key={f.key} className="border border-slate-400 px-2 py-1 text-center font-bold">{f.label}</th>
+                  ))}
+                  {inspectFields.map(f => (
+                    <th key={f.key} className="border border-slate-400 px-2 py-1 text-center font-bold">{f.label}</th>
+                  ))}
+                  {reinspectNumFields.map(f => (
+                    <th key={f.key} className="border border-[#E97451] px-2 py-1 text-center font-bold">{f.label}</th>
+                  ))}
+                  {reinspectTextFields.map(f => (
+                    <th key={f.key} className="border border-[#E97451] px-2 py-1 text-center font-bold">{f.label}</th>
+                  ))}
+                </tr>
+              </thead>
+              <tbody>
+                {groups.map((g, gi) => (
                   <ReportGroup
                     key={g.code}
                     group={g}
                     gi={gi}
-                    variantCount={vc}
+                    variantCount={g.variants.length}
                     qtyFields={qtyFields}
                     inspectFields={inspectFields}
                     reinspectNumFields={reinspectNumFields}
@@ -219,31 +236,72 @@ export default function ReportPreviewModal({ record, onClose }: Props) {
                     onChange={handleChange}
                     onTextChange={handleTextChange}
                   />
-                );
-              })}
+                ))}
 
-              {/* Grand total */}
-              <tr className="bg-[#BDD7EE] font-bold">
-                <td className="border border-slate-300 px-2 py-1 text-center" colSpan={5}>Tổng Cộng</td>
-                <td className="border border-slate-300 px-2 py-1 text-right">{grandTotal.orderQty}</td>
-                {qtyFields.map(f => (
-                  <td key={f.key} className="border border-slate-300 px-2 py-1 text-right">{grandTotal[f.key]}</td>
-                ))}
-                {inspectFields.map(f => (
-                  <td key={f.key} className="border border-slate-300 px-2 py-1 text-right">{grandTotal[f.key]}</td>
-                ))}
-                <td className="border border-slate-300 px-2 py-1 text-right">{grandTotal.rate}</td>
-                {reinspectNumFields.map(f => (
-                  <td key={f.key} className="border border-slate-300 px-2 py-1 text-right">{grandTotal[f.key]}</td>
-                ))}
-                {reinspectTextFields.map(f => (
-                  <td key={f.key} className="border border-slate-300 px-2 py-1">{grandTotal[f.key]}</td>
-                ))}
-              </tr>
-            </tbody>
-          </table>
+                {/* Grand total */}
+                <tr className="bg-[#BDD7EE] font-bold">
+                  <td className="border border-slate-300 px-2 py-1 text-center" colSpan={5}>Tổng Cộng</td>
+                  <td className="border border-slate-300 px-2 py-1 text-right">{grandTotal.orderQty}</td>
+                  {qtyFields.map(f => (
+                    <td key={f.key} className="border border-slate-300 px-2 py-1 text-right">{grandTotal[f.key]}</td>
+                  ))}
+                  {inspectFields.map(f => (
+                    <td key={f.key} className="border border-slate-300 px-2 py-1 text-right">{grandTotal[f.key]}</td>
+                  ))}
+                  <td className="border border-slate-300 px-2 py-1 text-right">{grandTotal.rate}</td>
+                  {reinspectNumFields.map(f => (
+                    <td key={f.key} className="border border-slate-300 px-2 py-1 text-right">{grandTotal[f.key]}</td>
+                  ))}
+                  {reinspectTextFields.map(f => (
+                    <td key={f.key} className="border border-slate-300 px-2 py-1">{grandTotal[f.key]}</td>
+                  ))}
+                </tr>
+              </tbody>
+            </table>
+          </div>
         </div>
-      </div>
+      )}
+
+      {/* Part C - Productivity tracking */}
+      {report.productivity && report.productivity.length > 0 && (
+        <div className="bg-white rounded-xl border border-slate-200 p-5 mt-4">
+          <h2 className="font-semibold text-slate-700 mb-3">
+            C - Theo dõi năng suất ({report.productivity.length} ngày)
+          </h2>
+          <div className="overflow-x-auto">
+            <table className="w-full text-sm">
+              <thead>
+                <tr className="bg-slate-50 border-b border-slate-200">
+                  <th className="text-left px-3 py-2 font-medium text-slate-600">Ngày</th>
+                  <th className="text-left px-3 py-2 font-medium text-slate-600">Nhà máy</th>
+                  <th className="text-right px-3 py-2 font-medium text-slate-600">SL QC</th>
+                  <th className="text-right px-3 py-2 font-medium text-slate-600">SL Chuyển</th>
+                  <th className="text-right px-3 py-2 font-medium text-slate-600">OT</th>
+                </tr>
+              </thead>
+              <tbody>
+                {report.productivity.map(p => (
+                  <tr key={p.id} className="border-b border-slate-100 hover:bg-slate-50">
+                    <td className="px-3 py-2">{formatDate(p.recordDate)}</td>
+                    <td className="px-3 py-2">{p.factoryName || '-'}</td>
+                    <td className="px-3 py-2 text-right">{p.qcQuantity}</td>
+                    <td className="px-3 py-2 text-right">{p.transitQuantity}</td>
+                    <td className="px-3 py-2 text-right">{p.ot}</td>
+                  </tr>
+                ))}
+              </tbody>
+              <tfoot>
+                <tr className="bg-slate-100 font-medium">
+                  <td className="px-3 py-2" colSpan={2}>Tổng cộng</td>
+                  <td className="px-3 py-2 text-right">{report.productivity.reduce((s, p) => s + (p.qcQuantity || 0), 0)}</td>
+                  <td className="px-3 py-2 text-right">{report.productivity.reduce((s, p) => s + (p.transitQuantity || 0), 0)}</td>
+                  <td className="px-3 py-2 text-right">{report.productivity.reduce((s, p) => s + (p.ot || 0), 0)}</td>
+                </tr>
+              </tfoot>
+            </table>
+          </div>
+        </div>
+      )}
     </div>
   );
 }

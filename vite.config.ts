@@ -14,10 +14,15 @@ export default defineConfig({
       },
     },
   },
-  optimizeDeps: {
-    exclude: ['lucide-react'],
-  },
   build: {
     outDir: 'dist/client',
+    rollupOptions: {
+      output: {
+        manualChunks: {
+          // Split xlsx libs into their own chunk (~1MB)
+          xlsx: ['xlsx', 'xlsx-js-style'],
+        },
+      },
+    },
   },
 });

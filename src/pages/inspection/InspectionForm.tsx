@@ -1,6 +1,5 @@
 import { useState, useEffect, useRef } from 'react';
 import { Upload, Plus, Trash2 } from 'lucide-react';
-import * as XLSX from 'xlsx';
 import { api } from '../../lib/api';
 import { ErrorAlert } from '../../components/ui/ErrorAlert';
 import type { Factory, InspectionItem } from '../../lib/database.types';
@@ -56,7 +55,19 @@ const emptyItem = (): InspectionItem => ({
   dirty: 0,
   seamDefect: 0,
   other: 0,
+  printDefect: 0,
+  soleDefect: 0,
+  scratchDefect: 0,
   metalCheck: 0,
+  reinspectQuantity: 0,
+  reinspectPassed: 0,
+  reinspectFailed: 0,
+  reinspectSpecifications: '',
+  reinspectAccessories: '',
+  reinspectAppearance: '',
+  reinspectPrintDefect: 0,
+  reinspectSoleDefect: 0,
+  reinspectScratchDefect: 0,
 });
 
 export default function InspectionForm({ onBack, onSaved }: Props) {
@@ -149,10 +160,11 @@ export default function InspectionForm({ onBack, onSaved }: Props) {
     }
   };
 
-  const handleExcelImport = (e: React.ChangeEvent<HTMLInputElement>) => {
+  const handleExcelImport = async (e: React.ChangeEvent<HTMLInputElement>) => {
     const file = e.target.files?.[0];
     if (!file) return;
 
+    const XLSX = await import('xlsx');
     const reader = new FileReader();
     reader.onload = (evt) => {
       try {
@@ -255,10 +267,120 @@ export default function InspectionForm({ onBack, onSaved }: Props) {
           });
         })();
 
+        // Detect new taiyonewform.xlsx format: has "TÁI KIỂM" or "tái kiểm" in headers
+        const isNewTaiyoFormat = (() => {
+          for (let r = 0; r < Math.min(json.length, 6); r++) {
+            const row = json[r] || [];
+            for (const cell of row) {
+              const val = String(cell || '').toLowerCase();
+              if (val.includes('tái kiểm') || val.includes('tai kiem') || val.includes('reinspect')) {
+                return true;
+              }
+            }
+          }
+          return false;
+        })();
+
+        // Detect form mới taiyo 2704 format: has "Hàng A1" or "Tổng Tái" in headers
+        const isNewTaiyo2704Format = (() => {
+          for (let r = 0; r < Math.min(json.length, 6); r++) {
+            const row = json[r] || [];
+            for (const cell of row) {
+              const val = String(cell || '').toLowerCase();
+              if (val.includes('hàng a1') || val.includes('tổng tái') || val.includes('hang a1') || val.includes('tong tai')) {
+                return true;
+              }
+            }
+          }
+          return false;
+        })();
+
         let dataRows: (string | number | Date | null)[][];
         let col: Record<string, number>;
+        let isNewFormat = false;
 
-        if (isTestTaiyoFormat) {
+        if (isNewTaiyo2704Format) {
+          // form mới taiyo 2704.xlsx: same layout as taiyonewform but without reinspect defect columns (28-30)
+          dataRows = json.slice(4).filter(row => row.some(cell => cell !== '' && cell != null));
+
+          col = {
+            date: 0,
+            content: -1,
+            productCode: 1,
+            brand: 2,
+            productName: 3,
+            color: 4,
+            size: 5,
+            inspectedQty: 6,
+            passedQty: 7,
+            defectiveQty: 8,
+            specifications: 9,
+            accessories: 10,
+            appearance: 11,
+            fabric: 12,
+            dirty: 13,
+            seamDefect: 14,
+            other: 15,
+            printDefect: 16,
+            soleDefect: 17,
+            scratchDefect: 18,
+            metalCheck: 27,
+            qcQty: 31,
+            transitHours: 33,
+            workingHours: -1,
+            otHours: 34,
+            reinspectQty: 19,
+            reinspectPassed: 20,
+            reinspectFailed: 21,
+            reinspectSpec: 22,
+            reinspectAcc: 23,
+            reinspectApp: 24,
+          };
+          isNewFormat = true;
+        } else if (isNewTaiyoFormat) {
+          // taiyonewform.xlsx: Row 0=section headers, Row 1-3=column headers (VN/EN/JP)
+          // Row 4=summary row (filtered out by empty product code), Row 5+=data
+          // Use fixed column indices instead of auto-detect (auto-detect picks wrong header row)
+          dataRows = json.slice(4).filter(row => row.some(cell => cell !== '' && cell != null));
+
+          col = {
+            date: 0,
+            content: -1,
+            productCode: 1,
+            brand: 2,
+            productName: 3,
+            color: 4,
+            size: 5,
+            inspectedQty: 6,
+            passedQty: 7,
+            defectiveQty: 8,
+            specifications: 9,
+            accessories: 10,
+            appearance: 11,
+            fabric: 12,
+            dirty: 13,
+            seamDefect: 14,
+            other: 15,
+            printDefect: 16,
+            soleDefect: 17,
+            scratchDefect: 18,
+            metalCheck: 27,
+            qcQty: 34,
+            transitHours: 36,
+            workingHours: -1,
+            otHours: 37,
+            reinspectQty: 19,
+            reinspectPassed: 20,
+            reinspectFailed: 21,
+            reinspectSpec: 22,
+            reinspectAcc: 23,
+            reinspectApp: 24,
+            reinspectPrintDefect: 28,
+            reinspectSoleDefect: 29,
+            reinspectScratchDefect: 30,
+          };
+          isNewFormat = true;
+        } else if (isTestTaiyoFormat) {
           // testtaiyo.xlsx format: 4 header rows (0-3), data starts at row 4
           // Row 0: Section headers (P1, P2, P3)
           // Row 1: Vietnamese column names
@@ -354,7 +476,21 @@ export default function InspectionForm({ onBack, onSaved }: Props) {
           dirty: parseNum(getCell(row, col.dirty)),
           seamDefect: parseNum(getCell(row, col.seamDefect)),
           other: parseNum(getCell(row, col.other)),
+          printDefect: parseNum(getCell(row, col.printDefect)),
+          soleDefect: parseNum(getCell(row, col.soleDefect)),
+          scratchDefect: parseNum(getCell(row, col.scratchDefect)),
           metalCheck: parseNum(getCell(row, col.metalCheck)),
+          ...(isNewFormat ? {
+            reinspectQuantity: parseNum(getCell(row, (col as any).reinspectQty)),
+            reinspectPassed: parseNum(getCell(row, (col as any).reinspectPassed)),
+            reinspectFailed: parseNum(getCell(row, (col as any).reinspectFailed)),
+            reinspectSpecifications: String(getCell(row, (col as any).reinspectSpec) || ''),
+            reinspectAccessories: String(getCell(row, (col as any).reinspectAcc) || ''),
+            reinspectAppearance: String(getCell(row, (col as any).reinspectApp) || ''),
+            reinspectPrintDefect: parseNum(getCell(row, (col as any).reinspectPrintDefect)),
+            reinspectSoleDefect: parseNum(getCell(row, (col as any).reinspectSoleDefect)),
+            reinspectScratchDefect: parseNum(getCell(row, (col as any).reinspectScratchDefect)),
+          } : {}),
         })).filter(item => item.productCode || item.productName);
 
         // Extract daily report data from first row
@@ -393,12 +529,17 @@ export default function InspectionForm({ onBack, onSaved }: Props) {
         }));
 
         if (newItems.length > 0) {
-          setForm(prev => ({
-            ...prev,
-            items: newItems,
-            reports: { ...prev.reports, ...reports },
-            productivity: [...prev.productivity, ...productivity],
-          }));
+          setForm(prev => {
+            // Merge productivity by date: overwrite existing dates, add new ones
+            const newByDate = Object.fromEntries(productivity.map((p: any) => [p.recordDate, p]));
+            const kept = prev.productivity.filter(p => !newByDate[p.recordDate]);
+            return {
+              ...prev,
+              items: newItems,
+              reports: { ...prev.reports, ...reports },
+              productivity: [...kept, ...productivity],
+            };
+          });
         }
       } catch (err) {
         console.error('Excel import error:', err);
@@ -532,25 +673,37 @@ export default function InspectionForm({ onBack, onSaved }: Props) {
             <table className="w-full text-sm">
               <thead className="bg-slate-50">
                 <tr>
-                  <th className="px-2 py-2 text-left font-semibold text-slate-700">Ngày KT</th>
-                  <th className="px-2 py-2 text-left font-semibold text-slate-700">Nội dung</th>
-                  <th className="px-2 py-2 text-left font-semibold text-slate-700">Mã hàng</th>
-                  <th className="px-2 py-2 text-left font-semibold text-slate-700">Thương hiệu</th>
-                  <th className="px-2 py-2 text-left font-semibold text-slate-700">Tên hàng</th>
-                  <th className="px-2 py-2 text-left font-semibold text-slate-700">Màu</th>
-                  <th className="px-2 py-2 text-left font-semibold text-slate-700">Size</th>
-                  <th className="px-2 py-2 text-right font-semibold text-slate-700">SL KT</th>
-                  <th className="px-2 py-2 text-right font-semibold text-slate-700">Hàng đạt</th>
-                  <th className="px-2 py-2 text-right font-semibold text-slate-700">Hàng hư</th>
-                  <th className="px-2 py-2 text-right font-semibold text-slate-700">Thông số</th>
-                  <th className="px-2 py-2 text-right font-semibold text-slate-700">Phụ liệu</th>
-                  <th className="px-2 py-2 text-right font-semibold text-slate-700">Ngoại quan</th>
-                  <th className="px-2 py-2 text-right font-semibold text-slate-700">Vải</th>
-                  <th className="px-2 py-2 text-right font-semibold text-slate-700">Dơ</th>
-                  <th className="px-2 py-2 text-right font-semibold text-slate-700">Lỗi may</th>
-                  <th className="px-2 py-2 text-right font-semibold text-slate-700">Khác</th>
-                  <th className="px-2 py-2 text-right font-semibold text-slate-700">Kiểm kim</th>
-                  <th className="px-2 py-2"></th>
+                  <th className="px-2 py-2 text-left font-semibold text-slate-700" rowSpan={2}>Ngày KT</th>
+                  <th className="px-2 py-2 text-left font-semibold text-slate-700" rowSpan={2}>Mã hàng</th>
+                  <th className="px-2 py-2 text-left font-semibold text-slate-700" rowSpan={2}>Thương hiệu</th>
+                  <th className="px-2 py-2 text-left font-semibold text-slate-700" rowSpan={2}>Tên hàng</th>
+                  <th className="px-2 py-2 text-left font-semibold text-slate-700" rowSpan={2}>Màu</th>
+                  <th className="px-2 py-2 text-left font-semibold text-slate-700" rowSpan={2}>Size</th>
+                  <th className="px-2 py-2 text-center font-semibold text-blue-700 bg-blue-50" colSpan={13}>KIỂM HÀNG</th>
+                  <th className="px-2 py-2 text-center font-semibold text-orange-700 bg-orange-50" colSpan={6}>TÁI KIỂM</th>
+                  <th className="px-2 py-2 text-center font-semibold text-slate-700 bg-green-50" rowSpan={2}>Kiểm Kim</th>
+                  <th className="px-2 py-2" rowSpan={2}></th>
+                </tr>
+                <tr>
+                  <th className="px-2 py-1 text-right font-semibold text-slate-700 bg-blue-50">SL kiểm lần 1</th>
+                  <th className="px-2 py-1 text-right font-semibold text-slate-700 bg-blue-50">Hàng A1</th>
+                  <th className="px-2 py-1 text-right font-semibold text-slate-700 bg-blue-50">Hàng B1</th>
+                  <th className="px-2 py-1 text-right font-semibold text-slate-700 bg-blue-50">Thông số</th>
+                  <th className="px-2 py-1 text-right font-semibold text-slate-700 bg-blue-50">Phụ liệu</th>
+                  <th className="px-2 py-1 text-right font-semibold text-slate-700 bg-blue-50">Ngoại quan</th>
+                  <th className="px-2 py-1 text-right font-semibold text-slate-700 bg-blue-50">Vải</th>
+                  <th className="px-2 py-1 text-right font-semibold text-slate-700 bg-blue-50">Dơ</th>
+                  <th className="px-2 py-1 text-right font-semibold text-slate-700 bg-blue-50">Lỗi may</th>
+                  <th className="px-2 py-1 text-right font-semibold text-slate-700 bg-blue-50">Khác</th>
+                  <th className="px-2 py-1 text-right font-semibold text-slate-700 bg-blue-50">Lỗi in</th>
+                  <th className="px-2 py-1 text-right font-semibold text-slate-700 bg-blue-50">Lỗi sole</th>
+                  <th className="px-2 py-1 text-right font-semibold text-slate-700 bg-blue-50">Lỗi trầy</th>
+                  <th className="px-2 py-1 text-right font-semibold text-slate-700 bg-orange-50">Tổng Tái</th>
+                  <th className="px-2 py-1 text-right font-semibold text-slate-700 bg-orange-50">Hàng A2</th>
+                  <th className="px-2 py-1 text-right font-semibold text-slate-700 bg-orange-50">Hàng B2</th>
+                  <th className="px-2 py-1 text-right font-semibold text-slate-700 bg-orange-50">Thông số</th>
+                  <th className="px-2 py-1 text-right font-semibold text-slate-700 bg-orange-50">Phụ liệu</th>
+                  <th className="px-2 py-1 text-right font-semibold text-slate-700 bg-orange-50">Ngoại quan</th>
                 </tr>
               </thead>
               <tbody className="divide-y divide-slate-100">
@@ -562,15 +715,6 @@ export default function InspectionForm({ onBack, onSaved }: Props) {
                         value={item.inspectionDate || ''}
                         onChange={e => updateItem(index, 'inspectionDate', e.target.value)}
                         className="w-28 px-2 py-1 border border-slate-300 rounded text-xs"
-                      />
-                    </td>
-                    <td className="px-2 py-2">
-                      <input
-                        type="text"
-                        value={item.inspectionContent}
-                        onChange={e => updateItem(index, 'inspectionContent', e.target.value)}
-                        className="w-32 px-2 py-1 border border-slate-300 rounded text-xs"
-                        placeholder="Nội dung"
                       />
                     </td>
                     <td className="px-2 py-2">
@@ -618,6 +762,7 @@ export default function InspectionForm({ onBack, onSaved }: Props) {
                         placeholder="Size"
                       />
                     </td>
+                    {/* KIỂM HÀNG */}
                     <td className="px-2 py-2">
                       <input
                         type="number"
@@ -708,6 +853,89 @@ export default function InspectionForm({ onBack, onSaved }: Props) {
                         placeholder="0"
                       />
                     </td>
+                    <td className="px-2 py-2">
+                      <input
+                        type="number"
+                        value={item.printDefect || ''}
+                        onChange={e => updateItem(index, 'printDefect', Number(e.target.value))}
+                        className="w-16 px-2 py-1 border border-slate-300 rounded text-xs text-right"
+                        placeholder="0"
+                      />
+                    </td>
+                    <td className="px-2 py-2">
+                      <input
+                        type="number"
+                        value={item.soleDefect || ''}
+                        onChange={e => updateItem(index, 'soleDefect', Number(e.target.value))}
+                        className="w-16 px-2 py-1 border border-slate-300 rounded text-xs text-right"
+                        placeholder="0"
+                      />
+                    </td>
+                    <td className="px-2 py-2">
+                      <input
+                        type="number"
+                        value={item.scratchDefect || ''}
+                        onChange={e => updateItem(index, 'scratchDefect', Number(e.target.value))}
+                        className="w-16 px-2 py-1 border border-slate-300 rounded text-xs text-right"
+                        placeholder="0"
+                      />
+                    </td>
+                    {/* TÁI KIỂM */}
+                    <td className="px-2 py-2">
+                      <input
+                        type="number"
+                        value={item.reinspectQuantity || ''}
+                        onChange={e => updateItem(index, 'reinspectQuantity', Number(e.target.value))}
+                        className="w-16 px-2 py-1 border border-orange-200 rounded text-xs text-right"
+                        placeholder="0"
+                      />
+                    </td>
+                    <td className="px-2 py-2">
+                      <input
+                        type="number"
+                        value={item.reinspectPassed || ''}
+                        onChange={e => updateItem(index, 'reinspectPassed', Number(e.target.value))}
+                        className="w-16 px-2 py-1 border border-orange-200 rounded text-xs text-right"
+                        placeholder="0"
+                      />
+                    </td>
+                    <td className="px-2 py-2">
+                      <input
+                        type="number"
+                        value={item.reinspectFailed || ''}
+                        onChange={e => updateItem(index, 'reinspectFailed', Number(e.target.value))}
+                        className="w-16 px-2 py-1 border border-orange-200 rounded text-xs text-right"
+                        placeholder="0"
+                      />
+                    </td>
+                    <td className="px-2 py-2">
+                      <input
+                        type="text"
+                        value={item.reinspectSpecifications || ''}
+                        onChange={e => updateItem(index, 'reinspectSpecifications', e.target.value)}
+                        className="w-20 px-2 py-1 border border-orange-200 rounded text-xs"
+                        placeholder="TS lỗi"
+                      />
+                    </td>
+                    <td className="px-2 py-2">
+                      <input
+                        type="text"
+                        value={item.reinspectAccessories || ''}
+                        onChange={e => updateItem(index, 'reinspectAccessories', e.target.value)}
+                        className="w-20 px-2 py-1 border border-orange-200 rounded text-xs"
+                        placeholder="PL lỗi"
+                      />
+                    </td>
+                    <td className="px-2 py-2">
+                      <input
+                        type="text"
+                        value={item.reinspectAppearance || ''}
+                        onChange={e => updateItem(index, 'reinspectAppearance', e.target.value)}
+                        className="w-20 px-2 py-1 border border-orange-200 rounded text-xs"
+                        placeholder="NQ lỗi"
+                      />
+                    </td>
+                    {/* Kiểm Kim */}
                     <td className="px-2 py-2">
                       <input
                         type="number"

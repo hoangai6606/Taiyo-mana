@@ -2,6 +2,7 @@ import 'dotenv/config';
 import express from 'express';
 import cors from 'cors';
 import helmet from 'helmet';
+import compression from 'compression';
 import path from 'path';
 import { fileURLToPath } from 'url';
 
@@ -19,6 +20,7 @@ import workspacesRouter from './routes/workspaces.js';
 import adminUsersRouter from './routes/admin-users.js';
 import impersonateRouter from './routes/impersonate.js';
 import chatRouter from './routes/chat.js';
+import inspectionReportsRouter from './routes/inspection-reports.js';
 
 const __dirname = path.dirname(fileURLToPath(import.meta.url));
 const app = express();
@@ -26,6 +28,7 @@ const PORT = process.env.PORT || 3001;
 
 app.use(cors());
 app.use(helmet({ contentSecurityPolicy: false }));
+app.use(compression());
 app.use(express.json({ limit: '10mb' }));
 
 // Serve uploaded files
@@ -47,10 +50,20 @@ app.use('/api/workspaces', workspacesRouter);
 app.use('/api/admin/users', adminUsersRouter);
 app.use('/api/impersonate', impersonateRouter);
 app.use('/api/chat', chatRouter);
+app.use('/api/inspection-reports', inspectionReportsRouter);
 
-// Serve static frontend in production
+// Serve static frontend in production (with cache for hashed assets)
 const clientDist = path.join(__dirname, '..', 'client');
-app.use(express.static(clientDist));
+app.use(express.static(clientDist, {
+  maxAge: '1y',            // hashed filenames can be cached forever
+  immutable: true,
+  setHeaders: (res, filePath) => {
+    // Don't cache index.html - it changes on every deploy
+    if (filePath.endsWith('index.html')) {
+      res.setHeader('Cache-Control', 'no-cache');
+    }
+  },
+}));
 app.get('/{*splat}', (_req, res) => {
   res.sendFile(path.join(clientDist, 'index.html'));
 });

@@ -1,6 +1,6 @@
 import { useState, useEffect } from 'react';
 import { api } from '../../lib/api';
-import type { DebitNote, InspectionRecord, Factory } from '../../lib/database.types';
+import type { DebitNote, InspectionReport, Factory } from '../../lib/database.types';
 import { Plus, X, Eye, Download } from 'lucide-react';
 import DebitNoteDetail from './DebitNoteDetail';
 import { exportDebitNote } from '../../lib/export-debit-note';
@@ -14,11 +14,14 @@ interface CreateItem {
   itemType: 'goods' | 'qc' | 'ot';
   inspectionDate?: string;
   factoryName?: string;
+  hours?: number;
+  inspectionContent?: string;
 }
 
 interface GoodsGroupedItem {
   productCode: string;
   quantity: number;
+  inspectionContent: string;
 }
 
 export default function DebitNotesPage() {
@@ -41,14 +44,15 @@ export default function DebitNotesPage() {
   };
 
   const calcTotal = (note: DebitNote): number => {
-    return (note.items || []).reduce((sum, i) => sum + Number(i.lineTotal), 0) + Number(note.travelAllowance || 0);
+    const travelHours = (Number(note.travelHoursQty) || 0) * (Number(note.travelHoursTime) || 0) * (Number(note.travelHoursUnitPrice) || 0);
+    return (note.items || []).reduce((sum, i) => sum + Number(i.lineTotal), 0) + Number(note.travelAllowance || 0) + travelHours;
   };
 
   const handleExport = async (id: string) => {
     setExporting(id);
     try {
       const note = await api.debitNotes.getById(id);
-      exportDebitNote(note);
+      await exportDebitNote(note);
     } catch (error) {
       console.error('Failed to export debit note:', error);
     } finally {
@@ -129,32 +133,40 @@ export default function DebitNotesPage() {
 }
 
 function CreateModal({ onClose, onCreated }: { onClose: () => void; onCreated: () => void }) {
-  const [inspectionRecords, setInspectionRecords] = useState<InspectionRecord[]>([]);
+  const [inspectionReports, setInspectionReports] = useState<InspectionReport[]>([]);
   const [factories, setFactories] = useState<Factory[]>([]);
-  const [selectedRecordId, setSelectedRecordId] = useState<string>('');
-  const [selectedRecord, setSelectedRecord] = useState<InspectionRecord | null>(null);
+  const [selectedReportId, setSelectedReportId] = useState<string>('');
+  const [selectedReport, setSelectedReport] = useState<InspectionReport | null>(null);
   const [selectedFactoryId, setSelectedFactoryId] = useState<string>('');
   const [selectedFactory, setSelectedFactory] = useState<Factory | null>(null);
   const [displayedFactoryName, setDisplayedFactoryName] = useState<string>('');
-  const [unitPriceGoods, setUnitPriceGoods] = useState<number>(0);
-  const [unitPriceQc, setUnitPriceQc] = useState<number>(0);
-  const [unitPriceOt, setUnitPriceOt] = useState<number>(0);
+  const [goodsPriceMap, setGoodsPriceMap] = useState<Map<string, number>>(new Map());
+  const [qcPriceMap, setQcPriceMap] = useState<Map<string, number>>(new Map());
+  const [otPriceMap, setOtPriceMap] = useState<Map<string, number>>(new Map());
   const [notes, setNotes] = useState<string>('');
-  const [travelAllowance, setTravelAllowance] = useState<number>(0);
+  const [travelDays, setTravelDays] = useState<number>(0);
+  const [travelUnitPrice, setTravelUnitPrice] = useState<number>(0);
+  const [vehicleCount, setVehicleCount] = useState<number>(0);
+  const travelAllowance = travelDays * travelUnitPrice * vehicleCount;
+  const [travelHoursQty, setTravelHoursQty] = useState<number>(0);
+  const [travelHoursTime, setTravelHoursTime] = useState<number>(0);
+  const [travelHoursUnitPrice, setTravelHoursUnitPrice] = useState<number>(0);
+  const travelHoursTotal = travelHoursQty * travelHoursTime * travelHoursUnitPrice;
   const [saving, setSaving] = useState(false);
+  const [hoursMap, setHoursMap] = useState<Map<string, { qcHours: number; otHours: number }>>(new Map());
   const [error, setError] = useState<string>('');
 
   useEffect(() => {
-    loadInspectionRecords();
+    loadInspectionReports();
     loadFactories();
   }, []);
 
-  const loadInspectionRecords = async () => {
+  const loadInspectionReports = async () => {
     try {
-      const data = await api.inspectionRecords.list();
-      setInspectionRecords(data);
+      const data = await api.inspectionReports.list();
+      setInspectionReports(data);
     } catch (error) {
-      console.error('Failed to load inspection records:', error);
+      console.error('Failed to load inspection reports:', error);
     }
   };
 
@@ -167,55 +179,99 @@ function CreateModal({ onClose, onCreated }: { onClose: () => void; onCreated: (
     }
   };
 
-  const handleRecordSelect = async (id: string) => {
-    setSelectedRecordId(id);
+  const handleReportSelect = async (id: string) => {
+    setSelectedReportId(id);
+    setError('');
+    setHoursMap(new Map());
+    setGoodsPriceMap(new Map());
+    setQcPriceMap(new Map());
+    setOtPriceMap(new Map());
     if (!id) {
-      setSelectedRecord(null);
+      setSelectedReport(null);
       setSelectedFactoryId('');
       setDisplayedFactoryName('');
       setSelectedFactory(null);
-      setUnitPriceGoods(0);
+      setTravelDays(0);
+      setTravelUnitPrice(0);
+      setVehicleCount(0);
       return;
     }
     try {
-      const record = await api.inspectionRecords.getById(id);
-      setSelectedRecord(record);
+      const report = await api.inspectionReports.getById(id);
+      setSelectedReport(report);
 
-      // Auto-select first factory if any exists
-      const factoryIds = JSON.parse(record.factoryIds || '[]') as string[];
-      if (factoryIds.length >= 1) {
-        const factoryName = factoryIds[0];
-        setSelectedFactoryId(factoryName);
-        setDisplayedFactoryName(factoryName);
+      // Auto-count distinct inspection dates from report items
+      const distinctDates = new Set<string>();
+      for (const item of (report.items || [])) {
+        if (item.inspectionDate) {
+          distinctDates.add(new Date(item.inspectionDate).toISOString().split('T')[0]);
+        }
+      }
+      setTravelDays(distinctDates.size);
+
+      // Parse factoryNames (comma-separated text) instead of JSON array
+      const factoryNames = (report.factoryNames || '').split(',').map(s => s.trim()).filter(Boolean);
+      if (factoryNames.length >= 1) {
+        const firstName = factoryNames[0];
+        setSelectedFactoryId(firstName);
+        setDisplayedFactoryName(firstName);
 
         // Thử tìm factory trong list factories để fetch price
-        const matchedFactory = factories.find(f => f.id === factoryName || f.name === factoryName || f.code === factoryName);
+        const matchedFactory = factories.find(f => f.name === firstName || f.code === firstName);
         if (matchedFactory) {
           setSelectedFactory(matchedFactory);
           // Fetch price for matched factory
-          const inspectionDate = new Date(record.inspectionDate).toISOString().split('T')[0];
-          const priceData = await api.factoryPrices.getByFactory(matchedFactory.id, inspectionDate);
-          setUnitPriceGoods(priceData ? Number(priceData.unitPrice) : 0);
+          const inspectionDate = report.inspectionDate ? new Date(report.inspectionDate).toISOString().split('T')[0] : '';
+          if (inspectionDate) {
+            const priceData = await api.factoryPrices.getByFactory(matchedFactory.id, inspectionDate);
+            const defaultPrice = priceData ? Number(priceData.unitPrice) : 0;
+            // Set default price for all goods items
+            const reportGoodsItems = (report.items || []).filter(i => i.inspectedQuantity && i.inspectedQuantity > 0);
+            const newMap = new Map<string, number>();
+            const seen = new Set<string>();
+            for (const i of reportGoodsItems) {
+              const code = i.productCode || '';
+              if (i.passedQuantity && i.passedQuantity > 0) {
+                const key = `${code}_Kiểm hàng`;
+                if (!seen.has(key)) {
+                  seen.add(key);
+                  newMap.set(key, defaultPrice);
+                }
+              }
+              if (i.defectiveQuantity && i.defectiveQuantity > 0) {
+                const key = `${code}_Tái kiểm`;
+                if (!seen.has(key)) {
+                  seen.add(key);
+                  newMap.set(key, defaultPrice);
+                }
+              }
+            }
+            setGoodsPriceMap(newMap);
+          }
         } else {
           setSelectedFactory(null);
-          // Giữ nguyên unitPriceGoods - không set về 0
         }
       } else {
         setSelectedFactoryId('');
         setDisplayedFactoryName('');
         setSelectedFactory(null);
-        // Giữ nguyên unitPriceGoods
       }
     } catch (error) {
-      console.error('Failed to load inspection record:', error);
+      console.error('Failed to load inspection report:', error);
+      setSelectedReport(null);
+      setSelectedReportId('');
+      setSelectedFactoryId('');
+      setDisplayedFactoryName('');
+      setSelectedFactory(null);
+      setError(error instanceof Error ? error.message : 'Không thể tải chi tiết phiếu báo cáo');
     }
   };
 
   const handleFactorySelect = async (factoryId: string) => {
     setSelectedFactoryId(factoryId);
-    if (!factoryId || !selectedRecord) {
+    if (!factoryId || !selectedReport) {
       setSelectedFactory(null);
-      setUnitPriceGoods(0);
+      setGoodsPriceMap(new Map());
       return;
     }
     try {
@@ -229,61 +285,112 @@ function CreateModal({ onClose, onCreated }: { onClose: () => void; onCreated: (
 
       // Auto-fetch unit price from factory_prices
       if (factory) {
-        const inspectionDate = new Date(selectedRecord.inspectionDate).toISOString().split('T')[0];
-        const priceData = await api.factoryPrices.getByFactory(factory.id, inspectionDate);
-        if (priceData) {
-          setUnitPriceGoods(Number(priceData.unitPrice));
-        } else {
-          setUnitPriceGoods(0);
+        const inspectionDate = selectedReport.inspectionDate ? new Date(selectedReport.inspectionDate).toISOString().split('T')[0] : '';
+        if (inspectionDate) {
+          const priceData = await api.factoryPrices.getByFactory(factory.id, inspectionDate);
+          const defaultPrice = priceData ? Number(priceData.unitPrice) : 0;
+          // Set default price for all goods items
+          const reportGoodsItems = (selectedReport.items || []).filter(i => i.inspectedQuantity && i.inspectedQuantity > 0);
+          const newMap = new Map<string, number>();
+          const seen = new Set<string>();
+          for (const i of reportGoodsItems) {
+            const code = i.productCode || '';
+            if (i.passedQuantity && i.passedQuantity > 0) {
+              const key = `${code}_Kiểm hàng`;
+              if (!seen.has(key)) {
+                seen.add(key);
+                newMap.set(key, defaultPrice);
+              }
+            }
+            if (i.defectiveQuantity && i.defectiveQuantity > 0) {
+              const key = `${code}_Tái kiểm`;
+              if (!seen.has(key)) {
+                seen.add(key);
+                newMap.set(key, defaultPrice);
+              }
+            }
+          }
+          setGoodsPriceMap(newMap);
         }
       } else {
-        setUnitPriceGoods(0);
+        setGoodsPriceMap(new Map());
       }
     } catch (error) {
       console.error('Failed to load factory price:', error);
-      setUnitPriceGoods(0);
+      setGoodsPriceMap(new Map());
     }
   };
 
-  // Group goods items by productCode only (not by size)
-  const goodsItems = selectedRecord?.items?.filter(i => i.inspectedQuantity && i.inspectedQuantity > 0) || [];
+  // Group goods items by productCode + inspectionContent (Kiểm hàng / Tái kiểm)
+  const goodsItems = selectedReport?.items?.filter(i => i.inspectedQuantity && i.inspectedQuantity > 0) || [];
   const goodsByKey = new Map<string, GoodsGroupedItem>();
   for (const item of goodsItems) {
-    const key = item.productCode || '';
-    const existing = goodsByKey.get(key);
-    if (existing) {
-      existing.quantity += item.inspectedQuantity || 0;
-    } else {
-      goodsByKey.set(key, {
-        productCode: key,
-        quantity: item.inspectedQuantity || 0,
-      });
+    // Split into "Kiểm hàng" (passed) and "Tái kiểm" (defective)
+    if (item.passedQuantity && item.passedQuantity > 0) {
+      const content = 'Kiểm hàng';
+      const key = `${item.productCode || ''}_${content}`;
+      const existing = goodsByKey.get(key);
+      if (existing) {
+        existing.quantity += item.passedQuantity;
+      } else {
+        goodsByKey.set(key, {
+          productCode: item.productCode || '',
+          quantity: item.passedQuantity,
+          inspectionContent: content,
+        });
+      }
+    }
+    if (item.defectiveQuantity && item.defectiveQuantity > 0) {
+      const content = 'Tái kiểm';
+      const key = `${item.productCode || ''}_${content}`;
+      const existing = goodsByKey.get(key);
+      if (existing) {
+        existing.quantity += item.defectiveQuantity;
+      } else {
+        goodsByKey.set(key, {
+          productCode: item.productCode || '',
+          quantity: item.defectiveQuantity,
+          inspectionContent: content,
+        });
+      }
     }
   }
 
+  const getGoodsKey = (productCode: string, inspectionContent: string) => `${productCode}_${inspectionContent}`;
+
   const calculateGoodsTotal = () => {
-    return Array.from(goodsByKey.values()).reduce((sum, item) => sum + item.quantity * unitPriceGoods, 0);
+    return Array.from(goodsByKey.values()).reduce((sum, item) => sum + item.quantity * (goodsPriceMap.get(getGoodsKey(item.productCode, item.inspectionContent)) || 0), 0);
   };
 
+  const eff = (val: number | null | undefined): number => (!val ? 1 : val);
+
+  const getHoursKey = (p: any) => p.id || (p.recordDate + '_' + p.factoryName);
+
   const calculateQcTotal = () => {
-    if (!selectedRecord?.productivity) return 0;
-    return selectedRecord.productivity.reduce((sum, p) => sum + (p.qcQuantity || 0) * unitPriceQc, 0);
+    if (!selectedReport?.productivity) return 0;
+    return selectedReport.productivity.reduce((sum, p) => {
+      const key = getHoursKey(p);
+      return sum + (p.qcQuantity || 0) * (qcPriceMap.get(key) || 0) * eff(hoursMap.get(key)?.qcHours);
+    }, 0);
   };
 
   const calculateOtTotal = () => {
-    if (!selectedRecord?.productivity) return 0;
-    return selectedRecord.productivity.reduce((sum, p) => sum + (p.ot || 0) * unitPriceOt, 0);
+    if (!selectedReport?.productivity) return 0;
+    return selectedReport.productivity.reduce((sum, p) => {
+      const key = getHoursKey(p);
+      return sum + (p.ot || 0) * (otPriceMap.get(key) || 0) * eff(hoursMap.get(key)?.otHours);
+    }, 0);
   };
 
   const calculateGrandTotal = () => {
-    return calculateGoodsTotal() + calculateQcTotal() + calculateOtTotal() + travelAllowance;
+    return calculateGoodsTotal() + calculateQcTotal() + calculateOtTotal() + travelAllowance + travelHoursTotal;
   };
 
   const handleSave = async () => {
     setError('');
 
-    if (!selectedRecord) {
-      setError('Vui lòng chọn inspection record');
+    if (!selectedReport) {
+      setError('Vui lòng chọn phiếu báo cáo');
       return;
     }
     if (!selectedFactoryId) {
@@ -295,63 +402,79 @@ function CreateModal({ onClose, onCreated }: { onClose: () => void; onCreated: (
     try {
       const items: CreateItem[] = [];
 
-      // Goods items (grouped by productCode only - size is not stored)
+      // Goods items (grouped by productCode + inspectionContent)
       for (const item of goodsByKey.values()) {
+        const price = goodsPriceMap.get(getGoodsKey(item.productCode, item.inspectionContent)) || 0;
         items.push({
           productCode: item.productCode,
-          size: '', // No longer storing size since we group by productCode only
+          size: '',
           quantity: item.quantity,
-          unitPrice: unitPriceGoods,
-          lineTotal: item.quantity * unitPriceGoods,
+          unitPrice: price,
+          lineTotal: item.quantity * price,
           itemType: 'goods',
+          inspectionContent: item.inspectionContent,
         });
       }
 
       // QC items (from productivity tracking)
-      if (selectedRecord.productivity) {
-        for (const p of selectedRecord.productivity) {
+      if (selectedReport.productivity) {
+        for (const p of selectedReport.productivity) {
           if (p.qcQuantity && p.qcQuantity > 0) {
+            const key = getHoursKey(p);
+            const h = eff(hoursMap.get(key)?.qcHours);
+            const price = qcPriceMap.get(key) || 0;
             items.push({
               productCode: p.recordDate || '',
               size: '',
               quantity: p.qcQuantity,
-              unitPrice: unitPriceQc,
-              lineTotal: p.qcQuantity * unitPriceQc,
+              unitPrice: price,
+              lineTotal: p.qcQuantity * price * h,
               itemType: 'qc',
               inspectionDate: p.recordDate,
-              factoryName: p.factoryId || '',
+              factoryName: p.factoryName || '',
+              hours: h,
             });
           }
         }
       }
 
       // OT items (from productivity tracking)
-      if (selectedRecord.productivity) {
-        for (const p of selectedRecord.productivity) {
+      if (selectedReport.productivity) {
+        for (const p of selectedReport.productivity) {
           if (p.ot && p.ot > 0) {
+            const key = getHoursKey(p);
+            const h = eff(hoursMap.get(key)?.otHours);
+            const price = otPriceMap.get(key) || 0;
             items.push({
               productCode: p.recordDate || '',
               size: '',
               quantity: p.ot,
-              unitPrice: unitPriceOt,
-              lineTotal: p.ot * unitPriceOt,
+              unitPrice: price,
+              lineTotal: p.ot * price * h,
               itemType: 'ot',
               inspectionDate: p.recordDate,
-              factoryName: p.factoryId || '',
+              factoryName: p.factoryName || '',
+              hours: h,
             });
           }
         }
       }
 
       await api.debitNotes.create({
-        customerId: selectedRecord.customerId,
-        customerName: selectedRecord.customerName,
-        inspectionRecordId: selectedRecord.id,
-        unitPriceGoods,
-        unitPriceQc,
-        unitPriceOt,
+        customerId: null,
+        customerName: selectedReport.customerName,
+        inspectionReportId: selectedReport.id,
+        unitPriceGoods: 0,
+        unitPriceQc: 0,
+        unitPriceOt: 0,
         notes,
         travelAllowance,
+        travelDays,
+        travelUnitPrice,
+        vehicleCount,
+        travelHoursQty,
+        travelHoursTime,
+        travelHoursUnitPrice,
         items,
       });
 
@@ -359,7 +482,8 @@ function CreateModal({ onClose, onCreated }: { onClose: () => void; onCreated: (
       onClose();
     } catch (error) {
       console.error('Failed to create debit note:', error);
-      setError('Lưu thất bại. Vui lòng thử lại.');
+      const msg = error instanceof Error ? error.message : 'Lưu thất bại. Vui lòng thử lại.';
+      setError(msg);
     } finally {
       setSaving(false);
     }
@@ -367,7 +491,7 @@ function CreateModal({ onClose, onCreated }: { onClose: () => void; onCreated: (
 
   return (
     <div className="fixed inset-0 bg-black/50 flex items-center justify-center z-50">
-      <div className="bg-white rounded-xl shadow-xl w-full max-w-4xl max-h-[90vh] overflow-hidden">
+      <div className="bg-white rounded-xl shadow-xl w-full max-w-6xl max-h-[90vh] overflow-hidden">
         <div className="flex items-center justify-between px-6 py-4 border-b border-slate-200">
           <h2 className="text-lg font-semibold text-slate-900">Tạo Debit Note</h2>
           <button onClick={onClose} className="text-slate-400 hover:text-slate-600">
@@ -377,34 +501,34 @@ function CreateModal({ onClose, onCreated }: { onClose: () => void; onCreated: (
 
         <div className="p-6 overflow-y-auto max-h-[calc(90vh-140px)]">
           <div className="space-y-6">
-            {/* Select inspection record */}
+            {/* Select inspection report */}
             <div>
-              <label className="block text-sm font-medium text-slate-700 mb-1">Chọn phiếu kiểm định</label>
+              <label className="block text-sm font-medium text-slate-700 mb-1">Chọn phiếu báo cáo</label>
               <select
-                value={selectedRecordId}
-                onChange={(e) => handleRecordSelect(e.target.value)}
+                value={selectedReportId}
+                onChange={(e) => handleReportSelect(e.target.value)}
                 className="w-full px-3 py-2 border border-slate-300 rounded-lg focus:outline-none focus:ring-2 focus:ring-blue-500"
               >
-                <option value="">-- Chọn phiếu kiểm định --</option>
-                {inspectionRecords.map((record) => (
-                  <option key={record.id} value={record.id}>
-                    {record.code} - {record.customerName}
+                <option value="">-- Chọn phiếu báo cáo --</option>
+                {inspectionReports.map((report) => (
+                  <option key={report.id} value={report.id}>
+                    {report.code} - {report.customerName}
                   </option>
                 ))}
               </select>
             </div>
 
-            {selectedRecord && (
+            {selectedReport && (
               <>
-                {/* Record info */}
+                {/* Report info */}
                 <div className="grid grid-cols-2 gap-4">
                   <div>
                     <label className="block text-sm font-medium text-slate-700 mb-1">Khách hàng</label>
-                    <p className="px-3 py-2 bg-slate-50 rounded-lg text-slate-900">{selectedRecord.customerName}</p>
+                    <p className="px-3 py-2 bg-slate-50 rounded-lg text-slate-900">{selectedReport.customerName}</p>
                   </div>
                   <div>
                     <label className="block text-sm font-medium text-slate-700 mb-1">Mã phiếu</label>
-                    <p className="px-3 py-2 bg-slate-50 rounded-lg text-slate-900">{selectedRecord.code}</p>
+                    <p className="px-3 py-2 bg-slate-50 rounded-lg text-slate-900">{selectedReport.code}</p>
                   </div>
                 </div>
 
@@ -414,37 +538,6 @@ function CreateModal({ onClose, onCreated }: { onClose: () => void; onCreated: (
                   <p className="px-3 py-2 bg-slate-50 rounded-lg text-slate-900">
                     {displayedFactoryName || selectedFactory ? (selectedFactory ? `${selectedFactory.code} - ${selectedFactory.name}` : displayedFactoryName) : '-'}
                   </p>
-                </div>
-
-                {/* Unit prices */}
-                <div className="grid grid-cols-3 gap-4">
-                  <div>
-                    <label className="block text-sm font-medium text-slate-700 mb-1">Đơn giá hàng hóa</label>
-                    <input
-                      type="number"
-                      value={unitPriceGoods}
-                      onChange={(e) => setUnitPriceGoods(Number(e.target.value))}
-                      className="w-full px-3 py-2 border border-slate-300 rounded-lg focus:outline-none focus:ring-2 focus:ring-blue-500"
-                    />
-                  </div>
-                  <div>
-                    <label className="block text-sm font-medium text-slate-700 mb-1">Đơn giá QC</label>
-                    <input
-                      type="number"
-                      value={unitPriceQc}
-                      onChange={(e) => setUnitPriceQc(Number(e.target.value))}
-                      className="w-full px-3 py-2 border border-slate-300 rounded-lg focus:outline-none focus:ring-2 focus:ring-blue-500"
-                    />
-                  </div>
-                  <div>
-                    <label className="block text-sm font-medium text-slate-700 mb-1">Đơn giá OT</label>
-                    <input
-                      type="number"
-                      value={unitPriceOt}
-                      onChange={(e) => setUnitPriceOt(Number(e.target.value))}
-                      className="w-full px-3 py-2 border border-slate-300 rounded-lg focus:outline-none focus:ring-2 focus:ring-blue-500"
-                    />
-                  </div>
                 </div>
 
                 {/* Notes */}
@@ -461,12 +554,93 @@ function CreateModal({ onClose, onCreated }: { onClose: () => void; onCreated: (
                 {/* Tiền đi đường */}
                 <div>
                   <label className="block text-sm font-medium text-slate-700 mb-1">Tiền đi đường</label>
-                  <input
-                    type="number"
-                    value={travelAllowance}
-                    onChange={(e) => setTravelAllowance(Number(e.target.value))}
-                    className="w-full px-3 py-2 border border-slate-300 rounded-lg focus:outline-none focus:ring-2 focus:ring-blue-500"
-                  />
+                  <div className="grid grid-cols-4 gap-3">
+                    <div>
+                      <label className="block text-xs text-slate-500 mb-1">Số ngày đi</label>
+                      <input
+                        type="number"
+                        value={travelDays}
+                        readOnly
+                        className="w-full px-3 py-2 border border-slate-200 bg-slate-50 rounded-lg text-slate-700"
+                      />
+                    </div>
+                    <div>
+                      <label className="block text-xs text-slate-500 mb-1">Đơn giá</label>
+                      <input
+                        type="number"
+                        value={travelUnitPrice}
+                        onChange={(e) => setTravelUnitPrice(Number(e.target.value))}
+                        className="w-full px-3 py-2 border border-slate-300 rounded-lg focus:outline-none focus:ring-2 focus:ring-blue-500"
+                      />
+                    </div>
+                    <div>
+                      <label className="block text-xs text-slate-500 mb-1">Lượng xe</label>
+                      <input
+                        type="number"
+                        value={vehicleCount}
+                        onChange={(e) => setVehicleCount(Number(e.target.value))}
+                        className="w-full px-3 py-2 border border-slate-300 rounded-lg focus:outline-none focus:ring-2 focus:ring-blue-500"
+                      />
+                    </div>
+                    <div>
+                      <label className="block text-xs text-slate-500 mb-1">Thành tiền</label>
+                      <input
+                        type="text"
+                        value={travelAllowance.toLocaleString('vi-VN')}
+                        readOnly
+                        className="w-full px-3 py-2 border border-slate-200 bg-slate-50 rounded-lg text-slate-700 font-medium"
+                      />
+                    </div>
+                  </div>
+                  <p className="text-xs text-slate-400 mt-1">
+                    {travelDays} ngày x {travelUnitPrice.toLocaleString('vi-VN')} đ x {vehicleCount} xe = {travelAllowance.toLocaleString('vi-VN')}
+                  </p>
+                </div>
+
+                {/* Giờ đi đường */}
+                <div>
+                  <label className="block text-sm font-medium text-slate-700 mb-1">Giờ đi đường</label>
+                  <div className="grid grid-cols-4 gap-3">
+                    <div>
+                      <label className="block text-xs text-slate-500 mb-1">SL QC</label>
+                      <input
+                        type="number"
+                        value={travelHoursQty || ''}
+                        onChange={(e) => setTravelHoursQty(Number(e.target.value) || 0)}
+                        className="w-full px-3 py-2 border border-slate-300 rounded-lg focus:outline-none focus:ring-2 focus:ring-blue-500"
+                      />
+                    </div>
+                    <div>
+                      <label className="block text-xs text-slate-500 mb-1">Thời gian</label>
+                      <input
+                        type="number"
+                        value={travelHoursTime || ''}
+                        onChange={(e) => setTravelHoursTime(Number(e.target.value) || 0)}
+                        className="w-full px-3 py-2 border border-slate-300 rounded-lg focus:outline-none focus:ring-2 focus:ring-blue-500"
+                      />
+                    </div>
+                    <div>
+                      <label className="block text-xs text-slate-500 mb-1">Đơn giá</label>
+                      <input
+                        type="number"
+                        value={travelHoursUnitPrice || ''}
+                        onChange={(e) => setTravelHoursUnitPrice(Number(e.target.value) || 0)}
+                        className="w-full px-3 py-2 border border-slate-300 rounded-lg focus:outline-none focus:ring-2 focus:ring-blue-500"
+                      />
+                    </div>
+                    <div>
+                      <label className="block text-xs text-slate-500 mb-1">Thành tiền</label>
+                      <input
+                        type="text"
+                        value={travelHoursTotal.toLocaleString('vi-VN')}
+                        readOnly
+                        className="w-full px-3 py-2 border border-slate-200 bg-slate-50 rounded-lg text-slate-700 font-medium"
+                      />
+                    </div>
+                  </div>
+                  <p className="text-xs text-slate-400 mt-1">
+                    {travelHoursQty} SL x {travelHoursTime.toLocaleString('vi-VN')} thời gian x {travelHoursUnitPrice.toLocaleString('vi-VN')} đ = {travelHoursTotal.toLocaleString('vi-VN')}
+                  </p>
                 </div>
 
                 {/* Theo hàng hóa */}
@@ -477,22 +651,42 @@ function CreateModal({ onClose, onCreated }: { onClose: () => void; onCreated: (
                       <thead className="bg-slate-50">
                         <tr>
                           <th className="px-4 py-2 text-left font-medium text-slate-600">Mã hàng</th>
+                          <th className="px-4 py-2 text-left font-medium text-slate-600">Nội dung</th>
                           <th className="px-4 py-2 text-right font-medium text-slate-600">Số lượng</th>
                           <th className="px-4 py-2 text-right font-medium text-slate-600">Đơn giá</th>
                           <th className="px-4 py-2 text-right font-medium text-slate-600">Thành tiền</th>
                         </tr>
                       </thead>
                       <tbody>
-                        {Array.from(goodsByKey.values()).map((item, idx) => (
-                          <tr key={idx} className="border-t border-slate-100">
-                            <td className="px-4 py-2">{item.productCode}</td>
-                            <td className="px-4 py-2 text-right">{item.quantity.toLocaleString('vi-VN')}</td>
-                            <td className="px-4 py-2 text-right">{unitPriceGoods.toLocaleString('vi-VN')}</td>
-                            <td className="px-4 py-2 text-right">{(item.quantity * unitPriceGoods).toLocaleString('vi-VN')}</td>
-                          </tr>
-                        ))}
+                        {Array.from(goodsByKey.values()).map((item, idx) => {
+                          const price = goodsPriceMap.get(getGoodsKey(item.productCode, item.inspectionContent)) || 0;
+                          return (
+                            <tr key={idx} className="border-t border-slate-100">
+                              <td className="px-4 py-2">{item.productCode}</td>
+                              <td className="px-4 py-2">{item.inspectionContent}</td>
+                              <td className="px-4 py-2 text-right">{item.quantity.toLocaleString('vi-VN')}</td>
+                              <td className="px-4 py-2 text-right">
+                                <input
+                                  type="number"
+                                  value={price || ''}
+                                  onChange={(e) => {
+                                    const val = e.target.value ? Number(e.target.value) : 0;
+                                    setGoodsPriceMap(prev => {
+                                      const next = new Map(prev);
+                                      next.set(getGoodsKey(item.productCode, item.inspectionContent), val);
+                                      return next;
+                                    });
+                                  }}
+                                  className="w-24 px-2 py-1 border border-slate-300 rounded text-right text-sm focus:outline-none focus:ring-1 focus:ring-blue-500"
+                                  min={0}
+                                />
+                              </td>
+                              <td className="px-4 py-2 text-right">{(item.quantity * price).toLocaleString('vi-VN')}</td>
+                            </tr>
+                          );
+                        })}
                         <tr className="border-t border-slate-200 bg-slate-50">
-                          <td colSpan={3} className="px-4 py-2 text-right font-medium">Tổng:</td>
+                          <td colSpan={4} className="px-4 py-2 text-right font-medium">Tổng:</td>
                           <td className="px-4 py-2 text-right font-medium">{calculateGoodsTotal().toLocaleString('vi-VN')}</td>
                         </tr>
                       </tbody>
@@ -502,41 +696,124 @@ function CreateModal({ onClose, onCreated }: { onClose: () => void; onCreated: (
 
                 {/* Theo QC */}
                 <div>
-                  <h3 className="text-sm font-medium text-slate-700 mb-2">Theo QC</h3>
-                  <div className="border border-slate-200 rounded-lg overflow-hidden">
-                    <table className="w-full text-sm">
+                  <h3 className="text-sm font-medium text-slate-700 mb-2">Theo QC + OT</h3>
+                  <div className="border border-slate-200 rounded-lg overflow-x-auto">
+                    <table className="w-full text-sm" style={{ minWidth: '900px' }}>
                       <thead className="bg-slate-50">
                         <tr>
                           <th className="px-3 py-2 text-left font-medium text-slate-600">Ngày</th>
+                          <th className="px-3 py-2 text-right font-medium text-slate-600">Số giờ QC</th>
                           <th className="px-3 py-2 text-right font-medium text-slate-600">SL QC</th>
                           <th className="px-3 py-2 text-right font-medium text-slate-600">Đơn giá QC</th>
                           <th className="px-3 py-2 text-right font-medium text-slate-600">Thành tiền</th>
+                          <th className="px-3 py-2 text-right font-medium text-slate-600">Số giờ OT</th>
                           <th className="px-3 py-2 text-right font-medium text-slate-600">SL OT</th>
                           <th className="px-3 py-2 text-right font-medium text-slate-600">Đơn giá OT</th>
                           <th className="px-3 py-2 text-right font-medium text-slate-600">Thành tiền OT</th>
                         </tr>
                       </thead>
                       <tbody>
-                        {selectedRecord.productivity?.map((p, idx) => {
+                        {selectedReport.productivity?.map((p, idx) => {
                           const hasQc = p.qcQuantity && p.qcQuantity > 0;
                           const hasOt = p.ot && p.ot > 0;
                           if (!hasQc && !hasOt) return null;
+                          const key = getHoursKey(p);
+                          const qcH = hoursMap.get(key)?.qcHours || '';
+                          const otH = hoursMap.get(key)?.otHours || '';
+                          const qcPrice = qcPriceMap.get(key) || 0;
+                          const otPrice = otPriceMap.get(key) || 0;
                           return (
                             <tr key={idx} className="border-t border-slate-100">
                               <td className="px-3 py-2">{p.recordDate ? new Date(p.recordDate).toLocaleDateString('vi-VN') : '-'}</td>
+                              <td className="px-3 py-2">
+                                {hasQc ? (
+                                  <input
+                                    type="number"
+                                    value={qcH}
+                                    onChange={(e) => {
+                                      const val = e.target.value ? Number(e.target.value) : 0;
+                                      setHoursMap(prev => {
+                                        const next = new Map(prev);
+                                        const entry = next.get(key) || { qcHours: 0, otHours: 0 };
+                                        next.set(key, { ...entry, qcHours: val });
+                                        return next;
+                                      });
+                                    }}
+                                    className="w-16 px-1 py-0.5 border border-slate-300 rounded text-right text-sm focus:outline-none focus:ring-1 focus:ring-blue-500"
+                                    placeholder="1"
+                                    min={0}
+                                    step={0.5}
+                                  />
+                                ) : '-'}
+                              </td>
                               <td className="px-3 py-2 text-right">{hasQc ? p.qcQuantity?.toLocaleString('vi-VN') : '-'}</td>
-                              <td className="px-3 py-2 text-right">{hasQc ? unitPriceQc.toLocaleString('vi-VN') : '-'}</td>
-                              <td className="px-3 py-2 text-right">{hasQc ? ((p.qcQuantity || 0) * unitPriceQc).toLocaleString('vi-VN') : '-'}</td>
+                              <td className="px-3 py-2 text-right">
+                                {hasQc ? (
+                                  <input
+                                    type="number"
+                                    value={qcPrice || ''}
+                                    onChange={(e) => {
+                                      const val = e.target.value ? Number(e.target.value) : 0;
+                                      setQcPriceMap(prev => {
+                                        const next = new Map(prev);
+                                        next.set(key, val);
+                                        return next;
+                                      });
+                                    }}
+                                    className="w-20 px-1 py-0.5 border border-slate-300 rounded text-right text-sm focus:outline-none focus:ring-1 focus:ring-blue-500"
+                                    min={0}
+                                  />
+                                ) : '-'}
+                              </td>
+                              <td className="px-3 py-2 text-right">{hasQc ? ((p.qcQuantity || 0) * qcPrice * eff(hoursMap.get(key)?.qcHours)).toLocaleString('vi-VN') : '-'}</td>
+                              <td className="px-3 py-2">
+                                {hasOt ? (
+                                  <input
+                                    type="number"
+                                    value={otH}
+                                    onChange={(e) => {
+                                      const val = e.target.value ? Number(e.target.value) : 0;
+                                      setHoursMap(prev => {
+                                        const next = new Map(prev);
+                                        const entry = next.get(key) || { qcHours: 0, otHours: 0 };
+                                        next.set(key, { ...entry, otHours: val });
+                                        return next;
+                                      });
+                                    }}
+                                    className="w-16 px-1 py-0.5 border border-slate-300 rounded text-right text-sm focus:outline-none focus:ring-1 focus:ring-blue-500"
+                                    placeholder="1"
+                                    min={0}
+                                    step={0.5}
+                                  />
+                                ) : '-'}
+                              </td>
                               <td className="px-3 py-2 text-right">{hasOt ? p.ot?.toLocaleString('vi-VN') : '-'}</td>
-                              <td className="px-3 py-2 text-right">{hasOt ? unitPriceOt.toLocaleString('vi-VN') : '-'}</td>
-                              <td className="px-3 py-2 text-right">{hasOt ? ((p.ot || 0) * unitPriceOt).toLocaleString('vi-VN') : '-'}</td>
+                              <td className="px-3 py-2 text-right">
+                                {hasOt ? (
+                                  <input
+                                    type="number"
+                                    value={otPrice || ''}
+                                    onChange={(e) => {
+                                      const val = e.target.value ? Number(e.target.value) : 0;
+                                      setOtPriceMap(prev => {
+                                        const next = new Map(prev);
+                                        next.set(key, val);
+                                        return next;
+                                      });
+                                    }}
+                                    className="w-20 px-1 py-0.5 border border-slate-300 rounded text-right text-sm focus:outline-none focus:ring-1 focus:ring-blue-500"
+                                    min={0}
+                                  />
+                                ) : '-'}
+                              </td>
+                              <td className="px-3 py-2 text-right">{hasOt ? ((p.ot || 0) * otPrice * eff(hoursMap.get(key)?.otHours)).toLocaleString('vi-VN') : '-'}</td>
                             </tr>
                           );
                         })}
                         <tr className="border-t border-slate-200 bg-slate-50">
-                          <td colSpan={3} className="px-3 py-2 text-right font-medium">Tổng QC + OT:</td>
+                          <td colSpan={4} className="px-3 py-2 text-right font-medium">Tổng QC:</td>
                           <td className="px-3 py-2 text-right font-medium">{calculateQcTotal().toLocaleString('vi-VN')}</td>
-                          <td colSpan={2}></td>
+                          <td colSpan={3} className="px-3 py-2 text-right font-medium">Tổng OT:</td>
                           <td className="px-3 py-2 text-right font-medium">{calculateOtTotal().toLocaleString('vi-VN')}</td>
                         </tr>
                       </tbody>

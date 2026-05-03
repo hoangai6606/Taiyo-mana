@@ -2,11 +2,12 @@ import { Router, type Request, Response } from 'express';
 import { db } from '../db.js';
 import { neon } from '@neondatabase/serverless';
 import { inspectionRecords, inspectionItems, dailyReports, productivityTracking, factories } from '../../drizzle/schema.js';
-import { eq } from 'drizzle-orm';
+import { eq, inArray, and } from 'drizzle-orm';
 import { convertByteArrayToUuid, isByteArrayString } from '../utils/convertUuid.js';
 import { getWorkspaceId } from '../utils/workspace.js';
 import { authenticateToken } from '../auth/middleware.js';
 
+// Separate neon instance for raw SQL (code generation, COUNT queries)
 const sql = neon(process.env.DATABASE_URL || '');
 
 const router = Router();
@@ -16,35 +17,39 @@ router.get('/', authenticateToken, async (req: Request, res: Response) => {
   try {
     const workspaceId = getWorkspaceId(req);
 
-    // Build base query — use customerName from inspection_records directly since
-    // the form saves customer_name (text), not customer_id (UUID FK)
-    const baseQuery = db
-      .select({
-        id: inspectionRecords.id,
-        code: inspectionRecords.code,
-        customerId: inspectionRecords.customerId,
-        customerName: inspectionRecords.customerName,
-        factoryIds: inspectionRecords.factoryIds,
-        inspectionDate: inspectionRecords.inspectionDate,
-        workspaceId: inspectionRecords.workspaceId,
-        createdAt: inspectionRecords.createdAt,
-        updatedAt: inspectionRecords.updatedAt,
-        createdBy: inspectionRecords.createdBy,
-      })
-      .from(inspectionRecords);
-
+    // Build query — create fresh query per request to avoid Drizzle mutable builder issues
     let records: any[];
+    const selectFields = {
+      id: inspectionRecords.id,
+      code: inspectionRecords.code,
+      customerId: inspectionRecords.customerId,
+      customerName: inspectionRecords.customerName,
+      factoryIds: inspectionRecords.factoryIds,
+      inspectionDate: inspectionRecords.inspectionDate,
+      workspaceId: inspectionRecords.workspaceId,
+      createdAt: inspectionRecords.createdAt,
+      updatedAt: inspectionRecords.updatedAt,
+      createdBy: inspectionRecords.createdBy,
+    };
+
     if (workspaceId) {
-      records = await baseQuery.where(eq(inspectionRecords.workspaceId, workspaceId));
+      records = await db.select(selectFields).from(inspectionRecords)
+        .where(eq(inspectionRecords.workspaceId, workspaceId));
     } else if (workspaceId === null) {
-      // Super admin with no workspace — see all records
-      records = await baseQuery;
+      records = await db.select(selectFields).from(inspectionRecords);
     } else {
       records = [];
     }
 
-    // Fetch factory names for all records (convert IDs to UUID if needed due to Neon bug)
-    const allFactories = await db.select({ id: factories.id, name: factories.name }).from(factories);
+    // Fetch factory names (filtered by workspace when applicable)
+    // Neon HTTP driver can crash on empty results — wrap in try/catch
+    let allFactories: any[] = [];
+    try {
+      allFactories = workspaceId
+        ? await db.select({ id: factories.id, name: factories.name }).from(factories)
+            .where(eq(factories.workspaceId, workspaceId))
+        : await db.select({ id: factories.id, name: factories.name }).from(factories);
+    } catch { /* Neon driver can crash on empty results */ }
     const factoryMap = Object.fromEntries(
       allFactories.map(f => {
         const normalizedId = isByteArrayString(f.id) ? convertByteArrayToUuid(f.id) : f.id;
@@ -70,6 +75,86 @@ router.get('/', authenticateToken, async (req: Request, res: Response) => {
     // Neon driver can fail on empty tables — return empty array instead of error
     console.error(err);
     res.json([]);
+  }
+});
+
+// GET /api/inspection-records/productivity-by-codes - Get productivity across all records matching product codes
+router.get('/productivity-by-codes', authenticateToken, async (req: Request, res: Response) => {
+  try {
+    const codesParam = req.query.codes as string;
+    if (!codesParam) {
+      res.json([]);
+      return;
+    }
+    const codes = codesParam.split(',').map(c => c.trim()).filter(Boolean);
+    if (codes.length === 0) {
+      res.json([]);
+      return;
+    }
+
+    const workspaceId = getWorkspaceId(req);
+
+    // Find all items matching the product codes
+    const matchingItems = await db
+      .select({ recordId: inspectionItems.recordId })
+      .from(inspectionItems)
+      .where(inArray(inspectionItems.productCode, codes));
+
+    const recordIds = [...new Set(matchingItems.map(i => i.recordId))];
+    if (recordIds.length === 0) {
+      res.json([]);
+      return;
+    }
+
+    // Filter records by workspace
+    let filteredRecordIds = recordIds;
+    if (workspaceId) {
+      const wsRecords = await db
+        .select({ id: inspectionRecords.id })
+        .from(inspectionRecords)
+        .where(and(
+          inArray(inspectionRecords.id, recordIds),
+          eq(inspectionRecords.workspaceId, workspaceId),
+        ));
+      filteredRecordIds = wsRecords.map(r => r.id);
+    }
+
+    if (filteredRecordIds.length === 0) {
+      res.json([]);
+      return;
+    }
+
+    // Fetch productivity for these records
+    const productivityData = await db
+      .select()
+      .from(productivityTracking)
+      .where(inArray(productivityTracking.recordId, filteredRecordIds));
+
+    // Enrich with factory names (filtered by workspace)
+    // Neon HTTP driver can crash on empty results — wrap in try/catch
+    let allFactories: any[] = [];
+    try {
+      allFactories = workspaceId
+        ? await db.select({ id: factories.id, name: factories.name }).from(factories)
+            .where(eq(factories.workspaceId, workspaceId))
+        : await db.select({ id: factories.id, name: factories.name }).from(factories);
+    } catch { /* Neon driver can crash on empty results */ }
+    const factoryMap = Object.fromEntries(
+      allFactories.map(f => {
+        const normalizedId = isByteArrayString(f.id) ? convertByteArrayToUuid(f.id) : f.id;
+        return [normalizedId, f.name];
+      })
+    );
+
+    const result = productivityData.map(p => ({
+      ...p,
+      factoryName: p.factoryId ? (factoryMap[p.factoryId] || '') : '',
+    }));
+
+    res.json(result);
+  } catch (err) {
+    console.error(err);
+    res.status(500).json({ error: 'Failed to fetch productivity data', details: err instanceof Error ? err.message : String(err) });
   }
 });
 
@@ -111,13 +196,17 @@ router.get('/:id', authenticateToken, async (req: Request, res: Response) => {
       return;
     }
 
-    // Fetch all child data
-    const items = await db.select().from(inspectionItems).where(eq(inspectionItems.recordId, id));
-    const reports = await db.select().from(dailyReports).where(eq(dailyReports.recordId, id));
-    const productivity = await db.select().from(productivityTracking).where(eq(productivityTracking.recordId, id));
-
-    // Get factory names (convert IDs to UUID if needed due to Neon bug)
-    const allFactories = await db.select({ id: factories.id, name: factories.name }).from(factories);
+    // Fetch all child data + factory names in parallel
+    const [items, reports, productivity] = await Promise.all([
+      db.select().from(inspectionItems).where(eq(inspectionItems.recordId, id)),
+      db.select().from(dailyReports).where(eq(dailyReports.recordId, id)),
+      db.select().from(productivityTracking).where(eq(productivityTracking.recordId, id)),
+    ]);
+    // Neon HTTP driver can crash on empty results — wrap in try/catch
+    let allFactories: any[] = [];
+    try {
+      allFactories = await db.select({ id: factories.id, name: factories.name }).from(factories);
+    } catch { /* Neon driver can crash on empty results */ }
     const factoryMap = Object.fromEntries(
       allFactories.map(f => {
         const normalizedId = isByteArrayString(f.id) ? convertByteArrayToUuid(f.id) : f.id;
@@ -230,7 +319,19 @@ router.post('/', authenticateToken, async (req: Request, res: Response) => {
             dirty: item.dirty || 0,
             seamDefect: item.seamDefect || 0,
             other: item.other || 0,
+            printDefect: item.printDefect || 0,
+            soleDefect: item.soleDefect || 0,
+            scratchDefect: item.scratchDefect || 0,
             metalCheck: item.metalCheck || 0,
+            reinspectQuantity: item.reinspectQuantity || 0,
+            reinspectPassed: item.reinspectPassed || 0,
+            reinspectFailed: item.reinspectFailed || 0,
+            reinspectSpecifications: item.reinspectSpecifications || '',
+            reinspectAccessories: item.reinspectAccessories || '',
+            reinspectAppearance: item.reinspectAppearance || '',
+            reinspectPrintDefect: item.reinspectPrintDefect || 0,
+            reinspectSoleDefect: item.reinspectSoleDefect || 0,
+            reinspectScratchDefect: item.reinspectScratchDefect || 0,
           }))
         );
       }
@@ -251,10 +352,10 @@ router.post('/', authenticateToken, async (req: Request, res: Response) => {
         });
       }
 
-      // Create productivity tracking
+      // Create productivity tracking (batch insert)
       if (productivity && productivity.length > 0) {
-        for (const entry of productivity) {
-          await db.insert(productivityTracking).values({
+        await db.insert(productivityTracking).values(
+          productivity.map((entry: any) => ({
             id: crypto.randomUUID(),
             recordId,
             recordDate: new Date(entry.recordDate),
@@ -262,8 +363,8 @@ router.post('/', authenticateToken, async (req: Request, res: Response) => {
             qcQuantity: parseInt(entry.qcQuantity) || 0,
             transitQuantity: parseInt(entry.transitQuantity) || 0,
             ot: parseInt(entry.ot) || 0,
-          });
-        }
+          }))
+        );
       }
     } catch (err) {
       // Manual rollback: delete main record if it was inserted
@@ -369,7 +470,19 @@ router.put('/:id', authenticateToken, async (req: Request, res: Response) => {
           dirty: item.dirty || 0,
           seamDefect: item.seamDefect || 0,
           other: item.other || 0,
+          printDefect: item.printDefect || 0,
+          soleDefect: item.soleDefect || 0,
+          scratchDefect: item.scratchDefect || 0,
           metalCheck: item.metalCheck || 0,
+          reinspectQuantity: item.reinspectQuantity || 0,
+          reinspectPassed: item.reinspectPassed || 0,
+          reinspectFailed: item.reinspectFailed || 0,
+          reinspectSpecifications: item.reinspectSpecifications || '',
+          reinspectAccessories: item.reinspectAccessories || '',
+          reinspectAppearance: item.reinspectAppearance || '',
+          reinspectPrintDefect: item.reinspectPrintDefect || 0,
+          reinspectSoleDefect: item.reinspectSoleDefect || 0,
+          reinspectScratchDefect: item.reinspectScratchDefect || 0,
         }))
       );
     }
@@ -392,8 +505,8 @@ router.put('/:id', authenticateToken, async (req: Request, res: Response) => {
 
     await db.delete(productivityTracking).where(eq(productivityTracking.recordId, id));
     if (productivity && productivity.length > 0) {
-      for (const entry of productivity) {
-        await db.insert(productivityTracking).values({
+      await db.insert(productivityTracking).values(
+        productivity.map((entry: any) => ({
           id: crypto.randomUUID(),
           recordId: id,
           recordDate: new Date(entry.recordDate),
@@ -401,8 +514,8 @@ router.put('/:id', authenticateToken, async (req: Request, res: Response) => {
           qcQuantity: parseInt(entry.qcQuantity) || 0,
           transitQuantity: parseInt(entry.transitQuantity) || 0,
           ot: parseInt(entry.ot) || 0,
-        });
-      }
+        }))
+      );
     }
 
     res.json({ success: true, id: updateResult[0]?.id || id });

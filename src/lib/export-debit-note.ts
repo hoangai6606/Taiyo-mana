@@ -1,4 +1,3 @@
-import * as XLSX from 'xlsx-js-style';
 import type { DebitNote, DebitNoteItem } from './database.types';
 
 const border = {
@@ -39,7 +38,8 @@ function fmt(n: number): string {
   return (Math.round(n * 100) / 100).toLocaleString('vi-VN');
 }
 
-export function exportDebitNote(note: DebitNote): void {
+export async function exportDebitNote(note: DebitNote): Promise<void> {
+  const XLSX = await import('xlsx-js-style');
   const items = note.items || [];
   const goodsItems = items.filter(i => i.itemType === 'goods');
   const qcItems = items.filter(i => i.itemType === 'qc');
@@ -49,7 +49,14 @@ export function exportDebitNote(note: DebitNote): void {
   const qcTotal = qcItems.reduce((s, i) => s + Number(i.lineTotal), 0);
   const otTotal = otItems.reduce((s, i) => s + Number(i.lineTotal), 0);
   const travel = note.travelAllowance || 0;
-  const grandTotal = goodsTotal + qcTotal + otTotal + travel;
+  const travelDays = Number(note.travelDays) || 0;
+  const travelUnitPrice = Number(note.travelUnitPrice) || 0;
+  const vehicleCount = Number(note.vehicleCount) || 0;
+  const travelHoursQty = Number(note.travelHoursQty) || 0;
+  const travelHoursTime = Number(note.travelHoursTime) || 0;
+  const travelHoursUnitPrice = Number(note.travelHoursUnitPrice) || 0;
+  const travelHoursTotal = travelHoursQty * travelHoursTime * travelHoursUnitPrice;
+  const grandTotal = goodsTotal + qcTotal + otTotal + travel + travelHoursTotal;
 
   const dateStr = new Date(note.createdAt).toLocaleDateString('vi-VN');
   const aoa: any[][] = [];
@@ -72,18 +79,18 @@ export function exportDebitNote(note: DebitNote): void {
   const goodsHeaderRow = rowIdx;
   rowIdx++;
 
-  aoa.push(['STT', 'Mã hàng', 'Số lượng', 'Đơn giá', 'Thành tiền']);
+  aoa.push(['STT', 'Mã hàng', 'Nội dung', 'Số lượng', 'Đơn giá', 'Thành tiền']);
   const goodsDataStart = rowIdx;
   rowIdx++;
 
   for (let i = 0; i < goodsItems.length; i++) {
     const it = goodsItems[i];
-    aoa.push([i + 1, it.productCode || '', it.quantity, it.unitPrice, it.lineTotal]);
+    aoa.push([i + 1, it.productCode || '', it.inspectionContent || '', it.quantity, it.unitPrice, it.lineTotal]);
     rowIdx++;
   }
 
   const goodsTotalRow = rowIdx;
-  aoa.push(['', 'Tổng hàng hóa', '', '', goodsTotal]);
+  aoa.push(['', 'Tổng hàng hóa', '', '', '', goodsTotal]);
   rowIdx++;
 
   // Row: empty
@@ -95,7 +102,7 @@ export function exportDebitNote(note: DebitNote): void {
   const qcHeaderRow = rowIdx;
   rowIdx++;
 
-  aoa.push(['STT', 'Ngày', 'SL QC', 'Đơn giá QC', 'Thành tiền QC', 'SL OT', 'Đơn giá OT', 'Thành tiền OT']);
+  aoa.push(['STT', 'Ngày', 'Số giờ QC', 'SL QC', 'Đơn giá QC', 'Thành tiền QC', 'Số giờ OT', 'SL OT', 'Đơn giá OT', 'Thành tiền OT']);
   const qcDataStart = rowIdx;
   rowIdx++;
 
@@ -122,9 +129,11 @@ export function exportDebitNote(note: DebitNote): void {
     aoa.push([
       stt,
       qc?.productCode || ot?.productCode || '',
+      qc?.hours || '',
       qc?.quantity || '',
       qc?.unitPrice || '',
       qc?.lineTotal || '',
+      ot?.hours || '',
       ot?.quantity || '',
       ot?.unitPrice || '',
       ot?.lineTotal || '',
@@ -135,7 +144,7 @@ export function exportDebitNote(note: DebitNote): void {
   }
 
   const qcOtTotalRow = rowIdx;
-  aoa.push(['', 'Tổng', '', '', qcTotal, '', '', otTotal]);
+  aoa.push(['', 'Tổng', '', '', '', qcTotal, '', '', '', otTotal]);
   rowIdx++;
 
   // Row: empty
@@ -144,7 +153,18 @@ export function exportDebitNote(note: DebitNote): void {
 
   // Travel allowance
   const travelRow = rowIdx;
-  aoa.push(['Tiền đi đường:', travel]);
+  const travelDesc = travelDays > 0 && travelUnitPrice > 0 && vehicleCount > 0
+    ? `${travelDays} ngày x ${fmt(travelUnitPrice)} đ x ${fmt(vehicleCount)} xe`
+    : '';
+  aoa.push(['Tiền đi đường:', travelDesc || '', '', '', '', travel]);
+  rowIdx++;
+
+  // Travel hours
+  const travelHoursRow = rowIdx;
+  const travelHoursDesc = travelHoursQty > 0 && travelHoursTime > 0 && travelHoursUnitPrice > 0
+    ? `${fmt(travelHoursQty)} SL x ${fmt(travelHoursTime)} tg x ${fmt(travelHoursUnitPrice)} đ`
+    : '';
+  aoa.push(['Giờ đi đường:', travelHoursDesc || '', '', '', '', travelHoursTotal]);
   rowIdx++;
 
   // Grand total
@@ -157,17 +177,20 @@ export function exportDebitNote(note: DebitNote): void {
   // ── Merges ──
   const merges: XLSX.Range[] = [
     // Title: merge full row
-    { s: { r: 0, c: 0 }, e: { r: 0, c: 4 } },
+    { s: { r: 0, c: 0 }, e: { r: 0, c: 5 } },
     // Section headers: merge full row
-    { s: { r: goodsHeaderRow, c: 0 }, e: { r: goodsHeaderRow, c: 4 } },
-    { s: { r: qcHeaderRow, c: 0 }, e: { r: qcHeaderRow, c: 7 } },
-    // Goods total: merge first 4 cols
-    { s: { r: goodsTotalRow, c: 0 }, e: { r: goodsTotalRow, c: 3 } },
-    // QC+OT total: merge first 4 cols
-    { s: { r: qcOtTotalRow, c: 0 }, e: { r: qcOtTotalRow, c: 3 } },
-    // Travel row: no merge needed
-    // Grand total: merge first col
-    { s: { r: grandRow, c: 0 }, e: { r: grandRow, c: 3 } },
+    { s: { r: goodsHeaderRow, c: 0 }, e: { r: goodsHeaderRow, c: 5 } },
+    { s: { r: qcHeaderRow, c: 0 }, e: { r: qcHeaderRow, c: 9 } },
+    // Goods total: merge first 5 cols
+    { s: { r: goodsTotalRow, c: 0 }, e: { r: goodsTotalRow, c: 4 } },
+    // QC+OT total: merge first 5 cols
+    { s: { r: qcOtTotalRow, c: 0 }, e: { r: qcOtTotalRow, c: 4 } },
+    // Travel row: merge description cols (c1-c4)
+    { s: { r: travelRow, c: 1 }, e: { r: travelRow, c: 4 } },
+    // Travel hours row: merge description cols (c1-c4)
+    { s: { r: travelHoursRow, c: 1 }, e: { r: travelHoursRow, c: 4 } },
+    // Grand total: merge first 5 cols
+    { s: { r: grandRow, c: 0 }, e: { r: grandRow, c: 4 } },
   ];
 
   ws['!merges'] = merges;
@@ -176,16 +199,18 @@ export function exportDebitNote(note: DebitNote): void {
   ws['!cols'] = [
     { wch: 6 },   // STT
     { wch: 16 },  // Mã hàng / Ngày
-    { wch: 12 },  // SL
-    { wch: 12 },  // Đơn giá
-    { wch: 14 },  // Thành tiền
+    { wch: 14 },  // Nội dung
+    { wch: 10 },  // Số giờ QC / Số lượng
+    { wch: 12 },  // SL QC / Đơn giá
+    { wch: 14 },  // Thành tiền QC
+    { wch: 10 },  // Số giờ OT
     { wch: 10 },  // SL OT
     { wch: 12 },  // Đơn giá OT
     { wch: 14 },  // Thành tiền OT
   ];
 
   // ── Apply styles ──
-  const maxCol = 8;
+  const maxCol = 10;
 
   // Title row
   const tRef = XLSX.utils.encode_cell({ r: 0, c: 0 });
@@ -195,7 +220,7 @@ export function exportDebitNote(note: DebitNote): void {
 
   // Section headers
   for (const secRow of [goodsHeaderRow, qcHeaderRow]) {
-    const cols = secRow === goodsHeaderRow ? 5 : 8;
+    const cols = secRow === goodsHeaderRow ? 6 : 10;
     for (let c = 0; c < cols; c++) {
       const ref = XLSX.utils.encode_cell({ r: secRow, c });
       if (ws[ref]) ws[ref].s = sectionHeaderStyle;
@@ -204,7 +229,7 @@ export function exportDebitNote(note: DebitNote): void {
 
   // Table header rows
   for (const hdrRow of [goodsDataStart, qcDataStart]) {
-    const cols = hdrRow === goodsDataStart ? 5 : 8;
+    const cols = hdrRow === goodsDataStart ? 6 : 10;
     for (let c = 0; c < cols; c++) {
       const ref = XLSX.utils.encode_cell({ r: hdrRow, c });
       if (ws[ref]) ws[ref].s = headerStyle;
@@ -213,21 +238,21 @@ export function exportDebitNote(note: DebitNote): void {
 
   // Goods data rows
   for (let r = goodsDataStart + 1; r < goodsTotalRow; r++) {
-    for (let c = 0; c < 5; c++) {
+    for (let c = 0; c < 6; c++) {
       const ref = XLSX.utils.encode_cell({ r, c });
       if (ws[ref]) {
         ws[ref].s = {
           ...dataStyle,
-          alignment: c >= 2 ? { horizontal: 'right' } : undefined,
+          alignment: c >= 3 ? { horizontal: 'right' } : undefined,
         };
       }
     }
   }
 
   // Goods total row
-  for (let c = 0; c < 5; c++) {
+  for (let c = 0; c < 6; c++) {
     const ref = XLSX.utils.encode_cell({ r: goodsTotalRow, c });
-    if (ws[ref]) ws[ref].s = { ...totalStyle, alignment: c === 4 ? { horizontal: 'right' } : undefined };
+    if (ws[ref]) ws[ref].s = { ...totalStyle, alignment: c === 5 ? { horizontal: 'right' } : undefined };
   }
 
   // QC+OT data rows
@@ -252,8 +277,18 @@ export function exportDebitNote(note: DebitNote): void {
   // Travel row
   const travelRef0 = XLSX.utils.encode_cell({ r: travelRow, c: 0 });
   const travelRef1 = XLSX.utils.encode_cell({ r: travelRow, c: 1 });
+  const travelRef5 = XLSX.utils.encode_cell({ r: travelRow, c: 5 });
   if (ws[travelRef0]) ws[travelRef0].s = { font: { bold: true, sz: 11 } };
-  if (ws[travelRef1]) ws[travelRef1].s = { font: { sz: 11 }, alignment: { horizontal: 'right' } };
+  if (ws[travelRef1]) ws[travelRef1].s = { font: { sz: 11 } };
+  if (ws[travelRef5]) ws[travelRef5].s = { font: { bold: true, sz: 11 }, alignment: { horizontal: 'right' } };
+
+  // Travel hours row
+  const thRef0 = XLSX.utils.encode_cell({ r: travelHoursRow, c: 0 });
+  const thRef1 = XLSX.utils.encode_cell({ r: travelHoursRow, c: 1 });
+  const thRef5 = XLSX.utils.encode_cell({ r: travelHoursRow, c: 5 });
+  if (ws[thRef0]) ws[thRef0].s = { font: { bold: true, sz: 11 } };
+  if (ws[thRef1]) ws[thRef1].s = { font: { sz: 11 } };
+  if (ws[thRef5]) ws[thRef5].s = { font: { bold: true, sz: 11 }, alignment: { horizontal: 'right' } };
 
   // Grand total row
   for (let c = 0; c < maxCol; c++) {
@@ -263,7 +298,7 @@ export function exportDebitNote(note: DebitNote): void {
   // Override text color to white for grand total
   const grandRef = XLSX.utils.encode_cell({ r: grandRow, c: 0 });
   if (ws[grandRef]) ws[grandRef].s = { ...grandTotalStyle, font: { bold: true, sz: 13, color: { rgb: 'FFFFFF' } } };
-  const grandValRef = XLSX.utils.encode_cell({ r: grandRow, c: 4 });
+  const grandValRef = XLSX.utils.encode_cell({ r: grandRow, c: 5 });
   if (ws[grandValRef]) ws[grandValRef].s = { ...grandTotalStyle, font: { bold: true, sz: 13, color: { rgb: 'FFFFFF' } }, alignment: { horizontal: 'right' } };
 
   // ── Write file ──
