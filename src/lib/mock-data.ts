@@ -150,6 +150,12 @@ export const MOCK_PRICE_RULES: PriceRule[] = [
   { id: 'price-004', customer_id: null, factory_id: null, product_type_id: null, product_style_id: null, rule_type: 'reinspection', unit_price: 12.0, currency: 'USD', effective_from: '2024-01-01', effective_to: null, priority: 1, active: true, notes: 'Giá tái kiểm mặc định', created_at: '2024-01-01T00:00:00Z', created_by: 'user-001' },
 ];
 
+export const MOCK_USER_PERMISSIONS = [
+  { id: 'perm-001', user_id: 'user-001', factory_id: 'factory-001', access_level: 'full_access', created_by: 'user-001' },
+  { id: 'perm-002', user_id: 'user-002', factory_id: 'factory-001', access_level: 'read_write', created_by: 'user-001' },
+  { id: 'perm-003', user_id: 'user-003', factory_id: 'factory-001', access_level: 'read_only', created_by: 'user-001' },
+];
+
 export const MOCK_USERS = [
   { id: 'user-001', name_vn: 'Nguyễn Quản Lý', role: 'manager' },
   { id: 'user-002', name_vn: 'Trần Tổ Trưởng', role: 'leader' },
