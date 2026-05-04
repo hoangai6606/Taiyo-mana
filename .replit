@@ -9,7 +9,7 @@ channel = "stable-25_05"
 [deployment]
 deploymentTarget = "autoscale"
 run = ["node", "dist/server/index.js"]
-build = ["sh", "-c", "npm run db:seed"]
+build = ["sh", "-c", "npm run build && npm run db:seed"]
 
 [workflows]
 runButton = "Project"
