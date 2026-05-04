@@ -1,6 +1,7 @@
 import { useState, useMemo, useCallback } from 'react';
 import { X, Download } from 'lucide-react';
 import type { InspectionRecord } from '../../lib/database.types';
+import NumberInput from '../../components/ui/NumberInput';
 import {
   buildGroups,
   exportInspectionReportFromGroups,
@@ -289,22 +290,20 @@ function ReportGroup({
           {/* So luong fields */}
           {qtyFields.map(f => (
             <td key={f.key} className="border border-slate-300 px-1 py-0.5">
-              <input
-                type="number"
+              <NumberInput
+                value={Number(v[f.key]) || 0}
                 className="w-14 px-1 py-0.5 border rounded text-xs text-right"
-                value={v[f.key]}
-                onChange={e => onChange(gi, vi, f.key, e.target.value)}
+                onChange={val => onChange(gi, vi, f.key, String(val))}
               />
             </td>
           ))}
           {/* Kiem Hang fields */}
           {inspectFields.map(f => (
             <td key={f.key} className="border border-slate-300 px-1 py-0.5">
-              <input
-                type="number"
+              <NumberInput
+                value={Number(v[f.key]) || 0}
                 className="w-14 px-1 py-0.5 border rounded text-xs text-right"
-                value={v[f.key]}
-                onChange={e => onChange(gi, vi, f.key, e.target.value)}
+                onChange={val => onChange(gi, vi, f.key, String(val))}
               />
             </td>
           ))}
@@ -313,11 +312,10 @@ function ReportGroup({
           {/* Reinspection numeric fields */}
           {reinspectNumFields.map(f => (
             <td key={f.key} className="border border-orange-200 px-1 py-0.5">
-              <input
-                type="number"
+              <NumberInput
+                value={Number(v[f.key]) || 0}
                 className="w-14 px-1 py-0.5 border border-orange-200 rounded text-xs text-right"
-                value={v[f.key]}
-                onChange={e => onChange(gi, vi, f.key, e.target.value)}
+                onChange={val => onChange(gi, vi, f.key, String(val))}
               />
             </td>
           ))}

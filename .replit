@@ -36,8 +36,12 @@ waitForPort = 5000
 outputType = "webview"
 
 [[ports]]
-localPort = 3001
+localPort = 1455
 externalPort = 3001
+exposeLocalhost = true
+
+[[ports]]
+localPort = 3001
 
 [[ports]]
 localPort = 4983

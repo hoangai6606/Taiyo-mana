@@ -3,6 +3,7 @@ import { Upload, Plus, Trash2 } from 'lucide-react';
 import { api } from '../../lib/api';
 import { ErrorAlert } from '../../components/ui/ErrorAlert';
 import type { Factory, InspectionItem } from '../../lib/database.types';
+import NumberInput from '../../components/ui/NumberInput';
 
 interface Props {
   onBack: () => void;
@@ -764,146 +765,130 @@ export default function InspectionForm({ onBack, onSaved }: Props) {
                     </td>
                     {/* KIỂM HÀNG */}
                     <td className="px-2 py-2">
-                      <input
-                        type="number"
-                        value={item.inspectedQuantity || ''}
-                        onChange={e => updateItem(index, 'inspectedQuantity', Number(e.target.value))}
+                      <NumberInput
+                        value={item.inspectedQuantity || 0}
+                        onChange={v => updateItem(index, 'inspectedQuantity', v)}
                         className="w-16 px-2 py-1 border border-slate-300 rounded text-xs text-right"
                         placeholder="0"
                       />
                     </td>
                     <td className="px-2 py-2">
-                      <input
-                        type="number"
-                        value={item.passedQuantity || ''}
-                        onChange={e => updateItem(index, 'passedQuantity', Number(e.target.value))}
+                      <NumberInput
+                        value={item.passedQuantity || 0}
+                        onChange={v => updateItem(index, 'passedQuantity', v)}
                         className="w-16 px-2 py-1 border border-slate-300 rounded text-xs text-right"
                         placeholder="0"
                       />
                     </td>
                     <td className="px-2 py-2">
-                      <input
-                        type="number"
-                        value={item.defectiveQuantity || ''}
-                        onChange={e => updateItem(index, 'defectiveQuantity', Number(e.target.value))}
+                      <NumberInput
+                        value={item.defectiveQuantity || 0}
+                        onChange={v => updateItem(index, 'defectiveQuantity', v)}
                         className="w-16 px-2 py-1 border border-slate-300 rounded text-xs text-right"
                         placeholder="0"
                       />
                     </td>
                     <td className="px-2 py-2">
-                      <input
-                        type="number"
-                        value={item.specifications || ''}
-                        onChange={e => updateItem(index, 'specifications', Number(e.target.value))}
+                      <NumberInput
+                        value={item.specifications || 0}
+                        onChange={v => updateItem(index, 'specifications', v)}
                         className="w-16 px-2 py-1 border border-slate-300 rounded text-xs text-right"
                         placeholder="0"
                       />
                     </td>
                     <td className="px-2 py-2">
-                      <input
-                        type="number"
-                        value={item.accessories || ''}
-                        onChange={e => updateItem(index, 'accessories', Number(e.target.value))}
+                      <NumberInput
+                        value={item.accessories || 0}
+                        onChange={v => updateItem(index, 'accessories', v)}
                         className="w-16 px-2 py-1 border border-slate-300 rounded text-xs text-right"
                         placeholder="0"
                       />
                     </td>
                     <td className="px-2 py-2">
-                      <input
-                        type="number"
-                        value={item.appearance || ''}
-                        onChange={e => updateItem(index, 'appearance', Number(e.target.value))}
+                      <NumberInput
+                        value={item.appearance || 0}
+                        onChange={v => updateItem(index, 'appearance', v)}
                         className="w-16 px-2 py-1 border border-slate-300 rounded text-xs text-right"
                         placeholder="0"
                       />
                     </td>
                     <td className="px-2 py-2">
-                      <input
-                        type="number"
-                        value={item.fabric || ''}
-                        onChange={e => updateItem(index, 'fabric', Number(e.target.value))}
+                      <NumberInput
+                        value={item.fabric || 0}
+                        onChange={v => updateItem(index, 'fabric', v)}
                         className="w-16 px-2 py-1 border border-slate-300 rounded text-xs text-right"
                         placeholder="0"
                       />
                     </td>
                     <td className="px-2 py-2">
-                      <input
-                        type="number"
-                        value={item.dirty || ''}
-                        onChange={e => updateItem(index, 'dirty', Number(e.target.value))}
+                      <NumberInput
+                        value={item.dirty || 0}
+                        onChange={v => updateItem(index, 'dirty', v)}
                         className="w-16 px-2 py-1 border border-slate-300 rounded text-xs text-right"
                         placeholder="0"
                       />
                     </td>
                     <td className="px-2 py-2">
-                      <input
-                        type="number"
-                        value={item.seamDefect || ''}
-                        onChange={e => updateItem(index, 'seamDefect', Number(e.target.value))}
+                      <NumberInput
+                        value={item.seamDefect || 0}
+                        onChange={v => updateItem(index, 'seamDefect', v)}
                         className="w-16 px-2 py-1 border border-slate-300 rounded text-xs text-right"
                         placeholder="0"
                       />
                     </td>
                     <td className="px-2 py-2">
-                      <input
-                        type="number"
-                        value={item.other || ''}
-                        onChange={e => updateItem(index, 'other', Number(e.target.value))}
+                      <NumberInput
+                        value={item.other || 0}
+                        onChange={v => updateItem(index, 'other', v)}
                         className="w-16 px-2 py-1 border border-slate-300 rounded text-xs text-right"
                         placeholder="0"
                       />
                     </td>
                     <td className="px-2 py-2">
-                      <input
-                        type="number"
-                        value={item.printDefect || ''}
-                        onChange={e => updateItem(index, 'printDefect', Number(e.target.value))}
+                      <NumberInput
+                        value={item.printDefect || 0}
+                        onChange={v => updateItem(index, 'printDefect', v)}
                         className="w-16 px-2 py-1 border border-slate-300 rounded text-xs text-right"
                         placeholder="0"
                       />
                     </td>
                     <td className="px-2 py-2">
-                      <input
-                        type="number"
-                        value={item.soleDefect || ''}
-                        onChange={e => updateItem(index, 'soleDefect', Number(e.target.value))}
+                      <NumberInput
+                        value={item.soleDefect || 0}
+                        onChange={v => updateItem(index, 'soleDefect', v)}
                         className="w-16 px-2 py-1 border border-slate-300 rounded text-xs text-right"
                         placeholder="0"
                       />
                     </td>
                     <td className="px-2 py-2">
-                      <input
-                        type="number"
-                        value={item.scratchDefect || ''}
-                        onChange={e => updateItem(index, 'scratchDefect', Number(e.target.value))}
+                      <NumberInput
+                        value={item.scratchDefect || 0}
+                        onChange={v => updateItem(index, 'scratchDefect', v)}
                         className="w-16 px-2 py-1 border border-slate-300 rounded text-xs text-right"
                         placeholder="0"
                       />
                     </td>
                     {/* TÁI KIỂM */}
                     <td className="px-2 py-2">
-                      <input
-                        type="number"
-                        value={item.reinspectQuantity || ''}
-                        onChange={e => updateItem(index, 'reinspectQuantity', Number(e.target.value))}
+                      <NumberInput
+                        value={item.reinspectQuantity || 0}
+                        onChange={v => updateItem(index, 'reinspectQuantity', v)}
                         className="w-16 px-2 py-1 border border-orange-200 rounded text-xs text-right"
                         placeholder="0"
                       />
                     </td>
                     <td className="px-2 py-2">
-                      <input
-                        type="number"
-                        value={item.reinspectPassed || ''}
-                        onChange={e => updateItem(index, 'reinspectPassed', Number(e.target.value))}
+                      <NumberInput
+                        value={item.reinspectPassed || 0}
+                        onChange={v => updateItem(index, 'reinspectPassed', v)}
                         className="w-16 px-2 py-1 border border-orange-200 rounded text-xs text-right"
                         placeholder="0"
                       />
                     </td>
                     <td className="px-2 py-2">
-                      <input
-                        type="number"
-                        value={item.reinspectFailed || ''}
-                        onChange={e => updateItem(index, 'reinspectFailed', Number(e.target.value))}
+                      <NumberInput
+                        value={item.reinspectFailed || 0}
+                        onChange={v => updateItem(index, 'reinspectFailed', v)}
                         className="w-16 px-2 py-1 border border-orange-200 rounded text-xs text-right"
                         placeholder="0"
                       />
@@ -937,10 +922,9 @@ export default function InspectionForm({ onBack, onSaved }: Props) {
                     </td>
                     {/* Kiểm Kim */}
                     <td className="px-2 py-2">
-                      <input
-                        type="number"
-                        value={item.metalCheck || ''}
-                        onChange={e => updateItem(index, 'metalCheck', Number(e.target.value))}
+                      <NumberInput
+                        value={item.metalCheck || 0}
+                        onChange={v => updateItem(index, 'metalCheck', v)}
                         className="w-16 px-2 py-1 border border-slate-300 rounded text-xs text-right"
                         placeholder="0"
                       />
@@ -999,12 +983,11 @@ export default function InspectionForm({ onBack, onSaved }: Props) {
                       />
                     </td>
                     <td className="px-3 py-2">
-                      <input
-                        type="number"
-                        value={row.qcQuantity || ''}
-                        onChange={e => {
+                      <NumberInput
+                        value={row.qcQuantity || 0}
+                        onChange={v => {
                           const newProductivity = [...form.productivity];
-                          newProductivity[index] = { ...newProductivity[index], qcQuantity: Number(e.target.value) };
+                          newProductivity[index] = { ...newProductivity[index], qcQuantity: v };
                           setForm(prev => ({ ...prev, productivity: newProductivity }));
                         }}
                         className="w-20 px-2 py-1 border border-slate-300 rounded text-xs text-right"
@@ -1012,12 +995,11 @@ export default function InspectionForm({ onBack, onSaved }: Props) {
                       />
                     </td>
                     <td className="px-3 py-2">
-                      <input
-                        type="number"
-                        value={row.ot || ''}
-                        onChange={e => {
+                      <NumberInput
+                        value={row.ot || 0}
+                        onChange={v => {
                           const newProductivity = [...form.productivity];
-                          newProductivity[index] = { ...newProductivity[index], ot: Number(e.target.value) };
+                          newProductivity[index] = { ...newProductivity[index], ot: v };
                           setForm(prev => ({ ...prev, productivity: newProductivity }));
                         }}
                         className="w-20 px-2 py-1 border border-slate-300 rounded text-xs text-right"

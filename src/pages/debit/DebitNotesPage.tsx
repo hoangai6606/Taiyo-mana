@@ -4,6 +4,7 @@ import type { DebitNote, InspectionReport, Factory } from '../../lib/database.ty
 import { Plus, X, Eye, Download } from 'lucide-react';
 import DebitNoteDetail from './DebitNoteDetail';
 import { exportDebitNote } from '../../lib/export-debit-note';
+import NumberInput from '../../components/ui/NumberInput';
 
 interface CreateItem {
   productCode: string;
@@ -566,19 +567,17 @@ function CreateModal({ onClose, onCreated }: { onClose: () => void; onCreated: (
                     </div>
                     <div>
                       <label className="block text-xs text-slate-500 mb-1">Đơn giá</label>
-                      <input
-                        type="number"
+                      <NumberInput
                         value={travelUnitPrice}
-                        onChange={(e) => setTravelUnitPrice(Number(e.target.value))}
+                        onChange={setTravelUnitPrice}
                         className="w-full px-3 py-2 border border-slate-300 rounded-lg focus:outline-none focus:ring-2 focus:ring-blue-500"
                       />
                     </div>
                     <div>
                       <label className="block text-xs text-slate-500 mb-1">Lượng xe</label>
-                      <input
-                        type="number"
+                      <NumberInput
                         value={vehicleCount}
-                        onChange={(e) => setVehicleCount(Number(e.target.value))}
+                        onChange={setVehicleCount}
                         className="w-full px-3 py-2 border border-slate-300 rounded-lg focus:outline-none focus:ring-2 focus:ring-blue-500"
                       />
                     </div>
@@ -603,28 +602,25 @@ function CreateModal({ onClose, onCreated }: { onClose: () => void; onCreated: (
                   <div className="grid grid-cols-4 gap-3">
                     <div>
                       <label className="block text-xs text-slate-500 mb-1">SL QC</label>
-                      <input
-                        type="number"
-                        value={travelHoursQty || ''}
-                        onChange={(e) => setTravelHoursQty(Number(e.target.value) || 0)}
+                      <NumberInput
+                        value={travelHoursQty}
+                        onChange={setTravelHoursQty}
                         className="w-full px-3 py-2 border border-slate-300 rounded-lg focus:outline-none focus:ring-2 focus:ring-blue-500"
                       />
                     </div>
                     <div>
                       <label className="block text-xs text-slate-500 mb-1">Thời gian</label>
-                      <input
-                        type="number"
-                        value={travelHoursTime || ''}
-                        onChange={(e) => setTravelHoursTime(Number(e.target.value) || 0)}
+                      <NumberInput
+                        value={travelHoursTime}
+                        onChange={setTravelHoursTime}
                         className="w-full px-3 py-2 border border-slate-300 rounded-lg focus:outline-none focus:ring-2 focus:ring-blue-500"
                       />
                     </div>
                     <div>
                       <label className="block text-xs text-slate-500 mb-1">Đơn giá</label>
-                      <input
-                        type="number"
-                        value={travelHoursUnitPrice || ''}
-                        onChange={(e) => setTravelHoursUnitPrice(Number(e.target.value) || 0)}
+                      <NumberInput
+                        value={travelHoursUnitPrice}
+                        onChange={setTravelHoursUnitPrice}
                         className="w-full px-3 py-2 border border-slate-300 rounded-lg focus:outline-none focus:ring-2 focus:ring-blue-500"
                       />
                     </div>
@@ -666,11 +662,9 @@ function CreateModal({ onClose, onCreated }: { onClose: () => void; onCreated: (
                               <td className="px-4 py-2">{item.inspectionContent}</td>
                               <td className="px-4 py-2 text-right">{item.quantity.toLocaleString('vi-VN')}</td>
                               <td className="px-4 py-2 text-right">
-                                <input
-                                  type="number"
-                                  value={price || ''}
-                                  onChange={(e) => {
-                                    const val = e.target.value ? Number(e.target.value) : 0;
+                                <NumberInput
+                                  value={price}
+                                  onChange={(val) => {
                                     setGoodsPriceMap(prev => {
                                       const next = new Map(prev);
                                       next.set(getGoodsKey(item.productCode, item.inspectionContent), val);
@@ -727,11 +721,9 @@ function CreateModal({ onClose, onCreated }: { onClose: () => void; onCreated: (
                               <td className="px-3 py-2">{p.recordDate ? new Date(p.recordDate).toLocaleDateString('vi-VN') : '-'}</td>
                               <td className="px-3 py-2">
                                 {hasQc ? (
-                                  <input
-                                    type="number"
+                                  <NumberInput
                                     value={qcH}
-                                    onChange={(e) => {
-                                      const val = e.target.value ? Number(e.target.value) : 0;
+                                    onChange={(val) => {
                                       setHoursMap(prev => {
                                         const next = new Map(prev);
                                         const entry = next.get(key) || { qcHours: 0, otHours: 0 };
@@ -749,11 +741,9 @@ function CreateModal({ onClose, onCreated }: { onClose: () => void; onCreated: (
                               <td className="px-3 py-2 text-right">{hasQc ? p.qcQuantity?.toLocaleString('vi-VN') : '-'}</td>
                               <td className="px-3 py-2 text-right">
                                 {hasQc ? (
-                                  <input
-                                    type="number"
-                                    value={qcPrice || ''}
-                                    onChange={(e) => {
-                                      const val = e.target.value ? Number(e.target.value) : 0;
+                                  <NumberInput
+                                    value={qcPrice}
+                                    onChange={(val) => {
                                       setQcPriceMap(prev => {
                                         const next = new Map(prev);
                                         next.set(key, val);
@@ -768,11 +758,9 @@ function CreateModal({ onClose, onCreated }: { onClose: () => void; onCreated: (
                               <td className="px-3 py-2 text-right">{hasQc ? ((p.qcQuantity || 0) * qcPrice * eff(hoursMap.get(key)?.qcHours)).toLocaleString('vi-VN') : '-'}</td>
                               <td className="px-3 py-2">
                                 {hasOt ? (
-                                  <input
-                                    type="number"
+                                  <NumberInput
                                     value={otH}
-                                    onChange={(e) => {
-                                      const val = e.target.value ? Number(e.target.value) : 0;
+                                    onChange={(val) => {
                                       setHoursMap(prev => {
                                         const next = new Map(prev);
                                         const entry = next.get(key) || { qcHours: 0, otHours: 0 };
@@ -790,11 +778,9 @@ function CreateModal({ onClose, onCreated }: { onClose: () => void; onCreated: (
                               <td className="px-3 py-2 text-right">{hasOt ? p.ot?.toLocaleString('vi-VN') : '-'}</td>
                               <td className="px-3 py-2 text-right">
                                 {hasOt ? (
-                                  <input
-                                    type="number"
-                                    value={otPrice || ''}
-                                    onChange={(e) => {
-                                      const val = e.target.value ? Number(e.target.value) : 0;
+                                  <NumberInput
+                                    value={otPrice}
+                                    onChange={(val) => {
                                       setOtPriceMap(prev => {
                                         const next = new Map(prev);
                                         next.set(key, val);

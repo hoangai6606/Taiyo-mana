@@ -1,0 +1,229 @@
+Taiyo Nisshin Vietnam - Project Handoff for Coding Agent
+
+ Tổng quan Project
+
+ Hệ thống quản lý Kiểm hàng (QC Inspection Management) cho công ty may
+ mặc Taiyo Nisshin Vietnam. Thay thế quy trình quản lý bằng Excel bằng
+ web app, bao gồm:
+ - Theo dõi báo cáo kiểm hàng hàng ngày (defect tracking theo
+ product/color/size)
+ - Theo dõi năng suất sản xuất
+ - Tạo debit note tự động từ inspection reports đã duyệt
+ - Export Excel theo template khách hàng
+ - Phân quyền theo role (staff, leader, manager, accounting_admin,
+ super_admin)
+ - Hỗ trợ multi-tenant workspace
+
+ ---
+ Tech Stack
+
+ ┌────────────┬─────────────────────────────────────────────────┐
+ │   Layer    │                   Technology                    │
+ ├────────────┼─────────────────────────────────────────────────┤
+ │ Frontend   │ React 18 + TypeScript + Vite 5 + Tailwind CSS 3 │
+ ├────────────┼─────────────────────────────────────────────────┤
+ │ Backend    │ Express 5 + TypeScript                          │
+ ├────────────┼─────────────────────────────────────────────────┤
+ │ Database   │ PostgreSQL (Neon) + Drizzle ORM                 │
+ ├────────────┼─────────────────────────────────────────────────┤
+ │ Auth       │ JWT + bcryptjs                                  │
+ ├────────────┼─────────────────────────────────────────────────┤
+ │ Excel      │ xlsx + xlsx-js-style                            │
+ ├────────────┼─────────────────────────────────────────────────┤
+ │ Deployment │ Replit (Node 20)                                │
+ └────────────┴─────────────────────────────────────────────────┘
+
+ ---
+ Cấu trúc thư mục quan trọng
+
+ ├── server/
+ │   ├── auth/
+ │   │   ├── routes.ts          # Login, register, /me endpoints
+ │   │   ├── middleware.ts       # JWT auth, role check
+ │   │   └── utils.ts           # hashPassword, verifyPassword,
+ generateToken
+ │   ├── routes/
+ │   │   ├── master-data.ts     # Customers, factories, product
+ types/styles CRUD
+ │   │   ├── inspection.ts      # Inspection records & reports CRUD
+ │   │   ├── debit-notes.ts     # Debit notes CRUD
+ │   │   ├── admin.ts           # Admin user management, impersonation
+ │   │   └── chat.ts            # Chat messages
+ │   └── db.ts                  # Drizzle DB connection (Neon
+ serverless)
+ ├── src/
+ │   ├── App.tsx                # Routes + lazy loading
+ │   ├── main.tsx               # Entry point
+ │   ├── contexts/
+ │   │   └── AuthContext.tsx     # Auth state, login/logout, role
+ checking
+ │   ├── components/
+ │   │   ├── ui/NumberInput.tsx # Custom number input (fix Unikey bug)
+ │   │   ├── ChatWidget.tsx     # Chat sidebar
+ │   │   └── Layout.tsx         # Main layout with sidebar nav
+ │   ├── lib/
+ │   │   ├── api.ts             # API client với auto JWT
+ │   │   ├── database.types.ts  # TypeScript types cho DB tables
+ │   │   ├── export-debit-note.ts # Excel export debit note
+ │   │   ├── import-inspection.ts # Excel import inspection
+ │   │   └── quantity-summary.ts # Quantity calculation logic
+ │   ├── pages/
+ │   │   ├── LoginPage.tsx
+ │   │   ├── Dashboard.tsx
+ │   │   ├── inspection/
+ │   │   │   ├── InspectionPage.tsx    # Inspection records list
+ │   │   │   ├── InspectionForm.tsx    # Create/edit inspection
+ │   │   │   └── ReportPreviewModal.tsx # Report preview
+ │   │   ├── reports/
+ │   │   │   ├── ReportList.tsx        # Reports list
+ │   │   │   └── ReportDetail.tsx      # Report detail with edit
+ │   │   ├── debit/
+ │   │   │   ├── DebitNotesPage.tsx    # Debit notes list + create
+ │   │   │   └── DebitNoteDetail.tsx   # Debit note detail
+ │   │   └── admin/
+ │   │       └── AdminPage.tsx         # Super admin user management
+ ├── drizzle/
+ │   ├── schema.ts              # Drizzle ORM schema definitions
+ │   └── seed.ts                # Database seed data
+ ├── docs/                      # Business rules, ERD, MVP scope
+ ├── .env                       # DATABASE_URL, JWT_SECRET
+ ├── drizzle.config.ts          # Drizzle migration config
+ └── vite.config.ts             # Vite + API proxy config
+
+ ---
+ Database Schema (18 tables)
+
+ Core
+
+ - workspaces - Multi-tenant workspace
+ - profiles - Users (email, password_hash, name_vn, name_jp, role,
+ factory_id, workspace_id, active)
+ - user_factory_permissions - User-factory access (full_access,
+ read_write, read_only)
+
+ Master Data
+
+ - customers - Khách hàng (code, name, currency USD/JPY)
+ - factories - Nhà máy (code, name, country)
+ - product_types - Loại sản phẩm
+ - product_styles - Mã hàng (code, customer_id, factory_id)
+ - factory_prices - Giá theo nhà máy
+
+ Inspection
+
+ - inspection_records - Phiếu kiểm hàng (date, factory, customer,
+ product, order_qty, status)
+ - inspection_items - Chi tiết kiểm hàng (color, size, inspected_qty,
+ passed_qty, defects...)
+ - inspection_reports - Báo cáo kiểm hàng (generated from records)
+ - report_items - Items trong report
+ - report_productivity - Năng suất
+ - daily_reports - Báo cáo ngày
+ - productivity_tracking - Theo dõi năng suất (date, qc_quantity, ot)
+
+ Finance
+
+ - debit_notes - Phiếu debit (customer, factory, period, total)
+ - debit_note_items - Chi tiết debit (product, qty, unit_price,
+ line_total, item_type)
+
+ Chat
+
+ - chat_messages - Tin nhắn (workspace_id, sender_id, message, file_url)
+
+ ---
+ API Endpoints
+
+ Auth (server/auth/routes.ts)
+
+ - POST /api/auth/login - Login
+ - POST /api/auth/register - Register
+ - GET /api/auth/me - Current user
+
+ Master Data (server/routes/master-data.ts)
+
+ - CRUD /api/customers, /api/factories, /api/product-types,
+ /api/product-styles
+
+ Inspection (server/routes/inspection.ts)
+
+ - GET/POST /api/inspection-records
+ - PUT /api/inspection-records/:id
+ - GET/POST /api/inspection-reports
+
+ Debit Notes (server/routes/debit-notes.ts)
+
+ - GET/POST /api/debit-notes
+
+ Admin (server/routes/admin.ts)
+
+ - GET /api/admin/users
+ - POST /api/impersonate/:workspaceId / POST /api/impersonate/exit
+
+ Chat (server/routes/chat.ts)
+
+ - GET /api/chat/messages
+
+ ---
+ Auth & Roles
+
+ Roles: staff, leader, manager, accounting_admin, super_admin
+
+ Flow:
+ 1. Login → JWT token → stored in localStorage
+ 2. Mọi API call đều kèm Authorization: Bearer <token>
+ 3. Middleware authenticateToken verify JWT
+ 4. Super admin có thể impersonate workspace khác
+
+ Navigation theo role:
+ - Super admin: Dashboard + Admin + tất cả pages
+ - Manager/Leader/Staff: Inspection + Reports + Debit Notes (theo
+ factory permission)
+
+ ---
+ Business Rules quan trọng
+
+ - Inspection workflow: draft → submitted → approved → locked
+ - Locked reports không edit được (trừ manager có audit log)
+ - Debit notes chỉ tạo từ approved reports
+ - Default defect threshold: 15%
+ - Excel export phải khớp chính xác template khách hàng
+ - Tất cả master data dùng soft delete (is_active flag)
+
+ ---
+ Commands
+
+ npm run dev          # Dev mode (frontend port 5000, backend port 3001)
+ npm run build        # Production build → dist/client + dist/server
+ npm run db:seed      # Seed database
+ npm run db:push      # Push schema changes to DB
+
+ ---
+ Database Connection
+
+ URL: postgresql://neondb_owner:npg_EZs9gPr7vSuX@ep-red-tree-a1zl5v7q-po
+ oler.ap-southeast-1.aws.neon.tech/neondb?sslmode=require&channel_bindin
+ g=require
+
+ Lưu ý: DB đã bị reset gần đây (tất cả data tạo ngày 2026-05-04). Table
+ profiles vừa được thêm cột workspace_id (trước đó thiếu).
+
+ ---
+ Super Admin Credentials
+
+ - Email: superadmin@taiyo.com
+ - Password: admin123 (đã reset)
+
+ ---
+ Known Issues / Recent Changes
+
+ 1. NumberInput component - Đã tạo src/components/ui/NumberInput.tsx để
+ fix bug Unikey chèn "00" khi nhập số. Đã thay 43 <input type="number">
+ bằng <NumberInput> trên 4 files. Còn 1 readOnly input trong
+ DebitNotesPage không cần thay.
+ 2. Missing workspace_id column - Table profiles trong DB thực tế thiếu
+ cột workspace_id so với Drizzle schema. Đã add manually bằng ALTER
+ TABLE.
+ 3. Database seeded with sample data - 4 users, 2 factories, 3
+ customers, 5 product styles, 3 product types. Tất cả data tables
+ (reports, inspections, debit notes) đang trống.
