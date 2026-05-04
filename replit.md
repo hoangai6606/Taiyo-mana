@@ -14,10 +14,10 @@ A production and quality inspection management system for TAIYO NISSHIN (Vietnam
 ## Key Directories
 - `src/pages/` — top-level page components (Dashboard, Production, Inspection, Master, Import, Debit, AuditLog)
 - `src/components/` — shared UI components and the Layout shell
-- `src/lib/` — types (`database.types.ts`), mock data (`mock-data.ts`), and a stub supabase client
+- `src/lib/` — types (`database.types.ts`), API client (`api.ts`)
 - `src/contexts/` — React context for auth (`AuthContext.tsx`), currently uses a mock profile
 - `src/services/` — business-logic helpers (inspection calc, quantity summary, approval)
-- `supabase/migrations/` — historical SQL migration files (for reference; not applied to Replit DB)
+- `drizzle/` — Drizzle ORM schema definitions and seed data
 
 ## Running the App
 ```bash
@@ -29,6 +29,5 @@ Serves on `http://localhost:5000`.
 - **Start application**: `npm run dev` → port 5000 (webview)
 
 ## Notes
-- The Supabase client (`src/lib/supabase.ts`) exports `null` — it is not connected to any Supabase project.
-- Authentication is mocked: the logged-in user is always `MOCK_PROFILE` (manager role).
-- If a real backend is needed in the future, the `supabase/migrations/` SQL files define the full intended schema.
+- Authentication uses JWT tokens with Express backend.
+- Database uses NeonDB (PostgreSQL) with Drizzle ORM.

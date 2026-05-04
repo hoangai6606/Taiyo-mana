@@ -123,10 +123,10 @@ export default function ReportPreviewModal({ record, onClose }: Props) {
     { key: 'fab', label: 'Vải' },
     { key: 'dirty', label: 'Dơ' },
     { key: 'seam', label: 'Lỗi may' },
-    { key: 'other', label: 'Khác' },
     { key: 'print', label: 'Lỗi in' },
     { key: 'sole', label: 'Lỗi sole' },
     { key: 'scratch', label: 'Lỗi trầy' },
+    { key: 'other', label: 'Khác' },
     { key: 'metal', label: 'Kiểm kim' },
   ];
 

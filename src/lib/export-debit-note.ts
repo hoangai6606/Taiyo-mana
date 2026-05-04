@@ -39,7 +39,8 @@ function fmt(n: number): string {
 }
 
 export async function exportDebitNote(note: DebitNote): Promise<void> {
-  const XLSX = await import('xlsx-js-style');
+  const XLSXModule = await import('xlsx-js-style');
+  const XLSX = XLSXModule.default || XLSXModule;
   const items = note.items || [];
   const goodsItems = items.filter(i => i.itemType === 'goods');
   const qcItems = items.filter(i => i.itemType === 'qc');

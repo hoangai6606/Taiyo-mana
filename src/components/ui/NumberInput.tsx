@@ -7,6 +7,7 @@ interface NumberInputProps extends Omit<React.InputHTMLAttributes<HTMLInputEleme
 
 export default function NumberInput({ value, onChange, className, ...rest }: NumberInputProps) {
   const [display, setDisplay] = useState(value === 0 && !rest.readOnly ? '' : String(value));
+  const [isComposing, setIsComposing] = useState(false);
   const inputRef = useRef<HTMLInputElement>(null);
 
   useEffect(() => {
@@ -15,8 +16,25 @@ export default function NumberInput({ value, onChange, className, ...rest }: Num
     }
   }, [value]);
 
+  function handleCompositionStart() {
+    setIsComposing(true);
+  }
+
+  function handleCompositionEnd(e: React.CompositionEvent<HTMLInputElement>) {
+    setIsComposing(false);
+    const raw = (e.target as HTMLInputElement).value;
+    const cleaned = raw.replace(/[^\d.,-]/g, '');
+    setDisplay(cleaned);
+    const num = parseFloat(cleaned.replace(/,/g, ''));
+    onChange(isNaN(num) ? 0 : num);
+  }
+
   function handleChange(e: React.ChangeEvent<HTMLInputElement>) {
     const raw = e.target.value;
+    if (isComposing) {
+      setDisplay(raw);
+      return;
+    }
     // Allow only digits, dot, comma, minus
     if (!/^[\d.,-]*$/.test(raw)) return;
     setDisplay(raw);
@@ -38,6 +56,8 @@ export default function NumberInput({ value, onChange, className, ...rest }: Num
       inputMode="decimal"
       value={display}
       onChange={handleChange}
+      onCompositionStart={handleCompositionStart}
+      onCompositionEnd={handleCompositionEnd}
       onBlur={handleBlur}
       className={className}
       {...rest}

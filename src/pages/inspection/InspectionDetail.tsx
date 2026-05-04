@@ -1,4 +1,4 @@
-import { ArrowLeft, Download } from 'lucide-react';
+import { ArrowLeft, Download, Pencil } from 'lucide-react';
 import { useState, useMemo } from 'react';
 import type { InspectionRecord, InspectionItem } from '../../lib/database.types';
 import ReportPreviewModal from './ReportPreviewModal';
@@ -6,6 +6,7 @@ import ReportPreviewModal from './ReportPreviewModal';
 interface Props {
   record: InspectionRecord;
   onBack: () => void;
+  onEdit: (record: InspectionRecord) => void;
 }
 
 // Extended item type with local defect details (client-side only)
@@ -13,7 +14,7 @@ interface InspectionItemWithDefects extends InspectionItem {
   defectDetails?: Record<string, string>;
 }
 
-export default function InspectionDetail({ record, onBack }: Props) {
+export default function InspectionDetail({ record, onBack, onEdit }: Props) {
   const [showPreview, setShowPreview] = useState(false);
   const [items] = useState<InspectionItemWithDefects[]>(
     (record.items || []) as InspectionItemWithDefects[]
@@ -73,14 +74,23 @@ export default function InspectionDetail({ record, onBack }: Props) {
             <h1 className="text-2xl font-bold text-slate-900">Chi Tiết Phiếu Kiểm Hàng</h1>
             <p className="text-slate-500 text-sm mt-1">Mã phiếu: {record.code}</p>
           </div>
-          <button
-            onClick={() => setShowPreview(true)}
-            disabled={!items.length}
-            className="px-4 py-2 bg-emerald-600 text-white rounded-lg hover:bg-emerald-700 disabled:opacity-50 disabled:cursor-not-allowed text-sm font-medium flex items-center gap-2"
-          >
-            <Download className="w-4 h-4" />
-            Xuất báo cáo
-          </button>
+          <div className="flex items-center gap-2">
+            <button
+              onClick={() => onEdit(record)}
+              className="px-4 py-2 bg-blue-600 text-white rounded-lg hover:bg-blue-700 text-sm font-medium flex items-center gap-2"
+            >
+              <Pencil className="w-4 h-4" />
+              Sửa Phiếu Kiểm
+            </button>
+            <button
+              onClick={() => setShowPreview(true)}
+              disabled={!items.length}
+              className="px-4 py-2 bg-emerald-600 text-white rounded-lg hover:bg-emerald-700 disabled:opacity-50 disabled:cursor-not-allowed text-sm font-medium flex items-center gap-2"
+            >
+              <Download className="w-4 h-4" />
+              Xuất báo cáo
+            </button>
+          </div>
         </div>
       </div>
 
@@ -141,10 +151,10 @@ export default function InspectionDetail({ record, onBack }: Props) {
                   <th className="px-3 py-1 text-right font-semibold text-slate-700 bg-blue-50">Vải</th>
                   <th className="px-3 py-1 text-right font-semibold text-slate-700 bg-blue-50">Dơ</th>
                   <th className="px-3 py-1 text-right font-semibold text-slate-700 bg-blue-50">Lỗi may</th>
-                  <th className="px-3 py-1 text-right font-semibold text-slate-700 bg-blue-50">Khác</th>
                   <th className="px-3 py-1 text-right font-semibold text-slate-700 bg-blue-50">Lỗi in</th>
                   <th className="px-3 py-1 text-right font-semibold text-slate-700 bg-blue-50">Lỗi sole</th>
                   <th className="px-3 py-1 text-right font-semibold text-slate-700 bg-blue-50">Lỗi trầy</th>
+                  <th className="px-3 py-1 text-right font-semibold text-slate-700 bg-blue-50">Khác</th>
                   <th className="px-3 py-1 text-right font-semibold text-slate-700 bg-orange-50">Tổng Tái</th>
                   <th className="px-3 py-1 text-right font-semibold text-slate-700 bg-orange-50">Hàng A2</th>
                   <th className="px-3 py-1 text-right font-semibold text-slate-700 bg-orange-50">Hàng B2</th>
@@ -170,10 +180,10 @@ export default function InspectionDetail({ record, onBack }: Props) {
                     <td className="px-3 py-2 text-slate-600 text-right">{item.fabric}</td>
                     <td className="px-3 py-2 text-slate-600 text-right">{item.dirty}</td>
                     <td className="px-3 py-2 text-slate-600 text-right">{item.seamDefect}</td>
-                    <td className="px-3 py-2 text-slate-600 text-right">{item.other}</td>
                     <td className="px-3 py-2 text-slate-600 text-right">{item.printDefect || 0}</td>
                     <td className="px-3 py-2 text-slate-600 text-right">{item.soleDefect || 0}</td>
                     <td className="px-3 py-2 text-slate-600 text-right">{item.scratchDefect || 0}</td>
+                    <td className="px-3 py-2 text-slate-600 text-right">{item.other}</td>
                     {/* TÁI KIỂM */}
                     <td className="px-3 py-2 text-slate-600 text-right">{item.reinspectQuantity || 0}</td>
                     <td className="px-3 py-2 text-slate-600 text-right">{item.reinspectPassed || 0}</td>

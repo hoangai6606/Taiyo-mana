@@ -11,8 +11,8 @@ export const COL = {
   PASSED_KK: 6, TOTAL_EXPORT: 7,
   // Kiem Hang group
   INSPECT_QTY: 8, PASSED_QTY: 9, DEFECTIVE_QTY: 10,
-  SPEC: 11, ACC: 12, APP: 13, FAB: 14, DIRTY: 15, SEAM: 16, OTHER: 17,
-  PRINT_DEFECT: 18, SOLE_DEFECT: 19, SCRATCH_DEFECT: 20,
+  SPEC: 11, ACC: 12, APP: 13, FAB: 14, DIRTY: 15, SEAM: 16, PRINT_DEFECT: 17,
+  SOLE_DEFECT: 18, SCRATCH_DEFECT: 19, OTHER: 20,
   METAL: 21,
   RATE: 22,
   // Tai kiem group
@@ -274,7 +274,8 @@ export async function exportInspectionReportFromGroups(
   meta: { customerName: string; factoryNames: string; dateStr: string; code: string },
   productivity?: ProductivityEntry[],
 ): Promise<void> {
-  const XLSX = await import('xlsx-js-style');
+  const XLSXModule = await import('xlsx-js-style');
+  const XLSX = XLSXModule.default || XLSXModule;
   const aoa: any[][] = [];
 
   // Row 0: Title
@@ -491,7 +492,7 @@ export async function exportInspectionReportFromGroups(
   ];
 
   // ── Styles ──
-  applyStyles(ws, aoa.length, groupTotalRows, grandTotalRow);
+  applyStyles(XLSX, ws, aoa.length, groupTotalRows, grandTotalRow);
 
   // ── Write file ──
   const wb = XLSX.utils.book_new();
@@ -608,7 +609,8 @@ export async function exportInspectionReport(record: InspectionRecord): Promise<
 // ── Internal styles ──
 
 function applyStyles(
-  ws: XLSX.WorkSheet,
+  XLSX: any,
+  ws: any,
   numRows: number,
   groupTotalRows: number[],
   grandTotalRow: number,

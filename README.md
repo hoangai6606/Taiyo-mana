@@ -5,7 +5,7 @@ Taiyo-mana
 ### 2026-04-02: Thêm chức năng Tái Kiểm (Reinspection)
 
 #### 1. Database & Schema
-- **Migration mới**: `supabase/migrations/20260402000000_add_reinspection_columns.sql`
+- **Schema update**: Added reinspection columns to `inspection_items` table
   - Thêm 6 cột vào bảng `inspection_items`: `reinspect_quantity`, `reinspect_passed`, `reinspect_failed`, `reinspect_specifications`, `reinspect_accessories`, `reinspect_appearance`
 - **Drizzle schema** (`drizzle/schema.ts`): thêm 6 cột tương ứng
 - **TypeScript types** (`src/lib/database.types.ts`): thêm type cho `InspectionItem`

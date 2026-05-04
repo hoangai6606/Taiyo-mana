@@ -1,5 +1,5 @@
 import { useState, useEffect } from 'react';
-import { Plus, Eye, Trash2 } from 'lucide-react';
+import { Plus, Eye, Trash2, Pencil } from 'lucide-react';
 import { api } from '../../lib/api';
 import { ErrorAlert } from '../../components/ui/ErrorAlert';
 import type { InspectionRecord } from '../../lib/database.types';
@@ -7,9 +7,10 @@ import type { InspectionRecord } from '../../lib/database.types';
 interface Props {
   onCreate: () => void;
   onDetail: (record: InspectionRecord) => void;
+  onEdit: (record: InspectionRecord) => void;
 }
 
-export default function InspectionList({ onCreate, onDetail }: Props) {
+export default function InspectionList({ onCreate, onDetail, onEdit }: Props) {
   const [records, setRecords] = useState<InspectionRecord[]>([]);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
@@ -124,6 +125,13 @@ export default function InspectionList({ onCreate, onDetail }: Props) {
                           title="Chi tiết"
                         >
                           <Eye className="w-4 h-4" />
+                        </button>
+                        <button
+                          onClick={() => onEdit(record)}
+                          className="p-1.5 rounded-lg hover:bg-amber-50 text-amber-600"
+                          title="Sửa"
+                        >
+                          <Pencil className="w-4 h-4" />
                         </button>
                         <button
                           onClick={() => handleDelete(record.id)}

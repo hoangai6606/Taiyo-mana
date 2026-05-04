@@ -1,3 +1,0 @@
-ALTER TABLE debit_notes ADD COLUMN IF NOT EXISTS travel_hours_qty NUMERIC DEFAULT '0';
-ALTER TABLE debit_notes ADD COLUMN IF NOT EXISTS travel_hours_time NUMERIC DEFAULT '0';
-ALTER TABLE debit_notes ADD COLUMN IF NOT EXISTS travel_hours_unit_price NUMERIC DEFAULT '0';

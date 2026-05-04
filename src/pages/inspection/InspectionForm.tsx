@@ -2,12 +2,13 @@ import { useState, useEffect, useRef } from 'react';
 import { Upload, Plus, Trash2 } from 'lucide-react';
 import { api } from '../../lib/api';
 import { ErrorAlert } from '../../components/ui/ErrorAlert';
-import type { Factory, InspectionItem } from '../../lib/database.types';
+import type { Factory, InspectionItem, InspectionRecord } from '../../lib/database.types';
 import NumberInput from '../../components/ui/NumberInput';
 
 interface Props {
   onBack: () => void;
   onSaved: () => void;
+  editRecord?: InspectionRecord | null;
 }
 
 interface ProductivityRow {
@@ -71,7 +72,8 @@ const emptyItem = (): InspectionItem => ({
   reinspectScratchDefect: 0,
 });
 
-export default function InspectionForm({ onBack, onSaved }: Props) {
+export default function InspectionForm({ onBack, onSaved, editRecord }: Props) {
+  const isEditMode = !!editRecord;
   const [factories, setFactories] = useState<Factory[]>([]);
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState<string | null>(null);
@@ -84,23 +86,66 @@ export default function InspectionForm({ onBack, onSaved }: Props) {
     ot: 0,
   });
 
-  const [form, setForm] = useState<FormData>({
-    code: '',
-    customerName: '',
-    factoryId: '',
-    inspectionDate: new Date().toISOString().split('T')[0],
-    items: [emptyItem()],
-    reports: {
-      specifications: 0,
-      accessories: 0,
-      appearance: 0,
-      fabric: 0,
-      dirty: 0,
-      seamDefect: 0,
-      other: 0,
-      metalCheck: 0,
-    },
-    productivity: [],
+  const [form, setForm] = useState<FormData>(() => {
+    if (!editRecord) {
+      return {
+        code: '',
+        customerName: '',
+        factoryId: '',
+        inspectionDate: new Date().toISOString().split('T')[0],
+        items: [emptyItem()],
+        reports: {
+          specifications: 0,
+          accessories: 0,
+          appearance: 0,
+          fabric: 0,
+          dirty: 0,
+          seamDefect: 0,
+          other: 0,
+          metalCheck: 0,
+        },
+        productivity: [],
+      };
+    }
+    // Map editRecord -> form state
+    const report = (editRecord.reports && editRecord.reports[0])
+      ? editRecord.reports[0]
+      : { specifications: 0, accessories: 0, appearance: 0, fabric: 0, dirty: 0, seamDefect: 0, other: 0, metalCheck: 0 };
+    let factoryId = '';
+    try {
+      const ids = JSON.parse(editRecord.factoryIds || '[]');
+      factoryId = Array.isArray(ids) ? ids[0] || '' : editRecord.factoryIds || '';
+    } catch { factoryId = editRecord.factoryIds || ''; }
+
+    const inspectionDate = editRecord.inspectionDate
+      ? editRecord.inspectionDate.split('T')[0]
+      : new Date().toISOString().split('T')[0];
+
+    return {
+      code: editRecord.code || '',
+      customerName: editRecord.customerName || '',
+      factoryId,
+      inspectionDate,
+      items: (editRecord.items && editRecord.items.length > 0)
+        ? editRecord.items.map(item => ({ ...item, inspectionDate: item.inspectionDate ? item.inspectionDate.split('T')[0] : null }))
+        : [emptyItem()],
+      reports: {
+        specifications: report.specifications || 0,
+        accessories: report.accessories || 0,
+        appearance: report.appearance || 0,
+        fabric: report.fabric || 0,
+        dirty: report.dirty || 0,
+        seamDefect: report.seamDefect || 0,
+        other: report.other || 0,
+        metalCheck: report.metalCheck || 0,
+      },
+      productivity: (editRecord.productivity || []).map(p => ({
+        recordDate: p.recordDate ? p.recordDate.split('T')[0] : new Date().toISOString().split('T')[0],
+        qcQuantity: p.qcQuantity || 0,
+        transitQuantity: 0,
+        ot: 0,
+      })),
+    };
   });
 
   useEffect(() => {
@@ -144,7 +189,7 @@ export default function InspectionForm({ onBack, onSaved }: Props) {
     try {
       setLoading(true);
       setError(null);
-      await api.inspectionRecords.create({
+      const payload = {
         code: form.code,
         customerName: form.customerName,
         factoryIds: form.factoryId ? [form.factoryId] : [],
@@ -152,7 +197,12 @@ export default function InspectionForm({ onBack, onSaved }: Props) {
         items: form.items,
         reports: form.reports,
         productivity: validProductivity,
-      } as any);
+      } as any;
+      if (isEditMode && editRecord) {
+        await api.inspectionRecords.update(editRecord.id, payload);
+      } else {
+        await api.inspectionRecords.create(payload);
+      }
       onSaved();
     } catch (err: any) {
       setError(err.message || 'Failed to save');
@@ -321,10 +371,10 @@ export default function InspectionForm({ onBack, onSaved }: Props) {
             fabric: 12,
             dirty: 13,
             seamDefect: 14,
-            other: 15,
-            printDefect: 16,
-            soleDefect: 17,
-            scratchDefect: 18,
+            printDefect: 15,
+            soleDefect: 16,
+            scratchDefect: 17,
+            other: 18,
             metalCheck: 27,
             qcQty: 31,
             transitHours: 33,
@@ -361,10 +411,10 @@ export default function InspectionForm({ onBack, onSaved }: Props) {
             fabric: 12,
             dirty: 13,
             seamDefect: 14,
-            other: 15,
-            printDefect: 16,
-            soleDefect: 17,
-            scratchDefect: 18,
+            printDefect: 15,
+            soleDefect: 16,
+            scratchDefect: 17,
+            other: 18,
             metalCheck: 27,
             qcQty: 34,
             transitHours: 36,
@@ -579,8 +629,8 @@ export default function InspectionForm({ onBack, onSaved }: Props) {
       <div className="mb-6">
         <div className="flex items-start justify-between gap-4">
           <div>
-            <h1 className="text-2xl font-bold text-slate-900">Tạo Phiếu Kiểm Mới</h1>
-            <p className="text-slate-500 text-sm mt-1">Nhập thông tin phiếu kiểm hàng QC</p>
+            <h1 className="text-2xl font-bold text-slate-900">{isEditMode ? 'Sửa Phiếu Kiểm' : 'Tạo Phiếu Kiểm Mới'}</h1>
+            <p className="text-slate-500 text-sm mt-1">{isEditMode ? 'Chỉnh sửa thông tin phiếu kiểm hàng' : 'Nhập thông tin phiếu kiểm hàng QC'}</p>
           </div>
         </div>
       </div>
@@ -695,10 +745,10 @@ export default function InspectionForm({ onBack, onSaved }: Props) {
                   <th className="px-2 py-1 text-right font-semibold text-slate-700 bg-blue-50">Vải</th>
                   <th className="px-2 py-1 text-right font-semibold text-slate-700 bg-blue-50">Dơ</th>
                   <th className="px-2 py-1 text-right font-semibold text-slate-700 bg-blue-50">Lỗi may</th>
-                  <th className="px-2 py-1 text-right font-semibold text-slate-700 bg-blue-50">Khác</th>
                   <th className="px-2 py-1 text-right font-semibold text-slate-700 bg-blue-50">Lỗi in</th>
                   <th className="px-2 py-1 text-right font-semibold text-slate-700 bg-blue-50">Lỗi sole</th>
                   <th className="px-2 py-1 text-right font-semibold text-slate-700 bg-blue-50">Lỗi trầy</th>
+                  <th className="px-2 py-1 text-right font-semibold text-slate-700 bg-blue-50">Khác</th>
                   <th className="px-2 py-1 text-right font-semibold text-slate-700 bg-orange-50">Tổng Tái</th>
                   <th className="px-2 py-1 text-right font-semibold text-slate-700 bg-orange-50">Hàng A2</th>
                   <th className="px-2 py-1 text-right font-semibold text-slate-700 bg-orange-50">Hàng B2</th>
@@ -838,14 +888,6 @@ export default function InspectionForm({ onBack, onSaved }: Props) {
                     </td>
                     <td className="px-2 py-2">
                       <NumberInput
-                        value={item.other || 0}
-                        onChange={v => updateItem(index, 'other', v)}
-                        className="w-16 px-2 py-1 border border-slate-300 rounded text-xs text-right"
-                        placeholder="0"
-                      />
-                    </td>
-                    <td className="px-2 py-2">
-                      <NumberInput
                         value={item.printDefect || 0}
                         onChange={v => updateItem(index, 'printDefect', v)}
                         className="w-16 px-2 py-1 border border-slate-300 rounded text-xs text-right"
@@ -864,6 +906,14 @@ export default function InspectionForm({ onBack, onSaved }: Props) {
                       <NumberInput
                         value={item.scratchDefect || 0}
                         onChange={v => updateItem(index, 'scratchDefect', v)}
+                        className="w-16 px-2 py-1 border border-slate-300 rounded text-xs text-right"
+                        placeholder="0"
+                      />
+                    </td>
+                    <td className="px-2 py-2">
+                      <NumberInput
+                        value={item.other || 0}
+                        onChange={v => updateItem(index, 'other', v)}
                         className="w-16 px-2 py-1 border border-slate-300 rounded text-xs text-right"
                         placeholder="0"
                       />
@@ -982,7 +1032,7 @@ export default function InspectionForm({ onBack, onSaved }: Props) {
                         className="w-28 px-2 py-1 border border-slate-300 rounded text-xs"
                       />
                     </td>
-                    <td className="px-3 py-2">
+                    <td className="px-3 py-2 text-right">
                       <NumberInput
                         value={row.qcQuantity || 0}
                         onChange={v => {
@@ -994,7 +1044,7 @@ export default function InspectionForm({ onBack, onSaved }: Props) {
                         placeholder="0"
                       />
                     </td>
-                    <td className="px-3 py-2">
+                    <td className="px-3 py-2 text-right">
                       <NumberInput
                         value={row.ot || 0}
                         onChange={v => {
@@ -1057,7 +1107,7 @@ export default function InspectionForm({ onBack, onSaved }: Props) {
             disabled={loading}
             className="px-4 py-2 bg-blue-600 text-white rounded-lg hover:bg-blue-700 disabled:opacity-50"
           >
-            {loading ? 'Đang lưu...' : 'Lưu Phiếu Kiểm'}
+            {loading ? 'Đang lưu...' : (isEditMode ? 'Cập Nhật Phiếu Kiểm' : 'Lưu Phiếu Kiểm')}
           </button>
         </div>
       </form>
