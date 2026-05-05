@@ -49,7 +49,7 @@ export async function exportDebitNote(note: DebitNote): Promise<void> {
   const goodsTotal = goodsItems.reduce((s, i) => s + Number(i.lineTotal), 0);
   const qcTotal = qcItems.reduce((s, i) => s + Number(i.lineTotal), 0);
   const otTotal = otItems.reduce((s, i) => s + Number(i.lineTotal), 0);
-  const travel = note.travelAllowance || 0;
+  const travel = Number(note.travelAllowance) || 0;
   const travelDays = Number(note.travelDays) || 0;
   const travelUnitPrice = Number(note.travelUnitPrice) || 0;
   const vehicleCount = Number(note.vehicleCount) || 0;
@@ -86,7 +86,7 @@ export async function exportDebitNote(note: DebitNote): Promise<void> {
 
   for (let i = 0; i < goodsItems.length; i++) {
     const it = goodsItems[i];
-    aoa.push([i + 1, it.productCode || '', it.inspectionContent || '', it.quantity, it.unitPrice, it.lineTotal]);
+    aoa.push([i + 1, it.productCode || '', it.inspectionContent || '', Number(it.quantity) || 0, Number(it.unitPrice) || 0, Number(it.lineTotal) || 0]);
     rowIdx++;
   }
 
@@ -130,14 +130,14 @@ export async function exportDebitNote(note: DebitNote): Promise<void> {
     aoa.push([
       stt,
       qc?.productCode || ot?.productCode || '',
-      qc?.hours || '',
-      qc?.quantity || '',
-      qc?.unitPrice || '',
-      qc?.lineTotal || '',
-      ot?.hours || '',
-      ot?.quantity || '',
-      ot?.unitPrice || '',
-      ot?.lineTotal || '',
+      Number(qc?.hours) || '',
+      Number(qc?.quantity) || '',
+      Number(qc?.unitPrice) || '',
+      Number(qc?.lineTotal) || '',
+      Number(ot?.hours) || '',
+      Number(ot?.quantity) || '',
+      Number(ot?.unitPrice) || '',
+      Number(ot?.lineTotal) || '',
     ]);
     qcOtRows.push(rowIdx);
     rowIdx++;

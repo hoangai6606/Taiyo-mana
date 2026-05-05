@@ -17,82 +17,97 @@ router.get('/', authenticateToken, async (req: Request, res: Response) => {
   try {
     const workspaceId = getWorkspaceId(req);
 
-    let notes: any[] = [];
-    try {
-      const selectFields = {
-        id: debitNotes.id,
-        debitNo: debitNotes.debitNo,
-        customerId: debitNotes.customerId,
-        customerName: debitNotes.customerName,
-        inspectionRecordId: debitNotes.inspectionRecordId,
-        inspectionReportId: debitNotes.inspectionReportId,
-        unitPriceGoods: debitNotes.unitPriceGoods,
-        unitPriceQc: debitNotes.unitPriceQc,
-        unitPriceOt: debitNotes.unitPriceOt,
-        notes: debitNotes.notes,
-        travelAllowance: debitNotes.travelAllowance,
-        travelDays: debitNotes.travelDays,
-        travelUnitPrice: debitNotes.travelUnitPrice,
-        vehicleCount: debitNotes.vehicleCount,
-        travelHoursQty: debitNotes.travelHoursQty,
-        travelHoursTime: debitNotes.travelHoursTime,
-        travelHoursUnitPrice: debitNotes.travelHoursUnitPrice,
-        createdAt: debitNotes.createdAt,
-        updatedAt: debitNotes.updatedAt,
-        createdBy: debitNotes.createdBy,
-      };
+    // Single query: notes + items via LEFT JOIN (1 HTTP round-trip instead of 2)
+    let rows: any[];
+    if (workspaceId) {
+      rows = await sql`
+        SELECT
+          dn.id, dn.debit_no, dn.customer_id, dn.customer_name,
+          dn.inspection_record_id, dn.inspection_report_id,
+          dn.unit_price_goods, dn.unit_price_qc, dn.unit_price_ot,
+          dn.notes, dn.travel_allowance, dn.travel_days, dn.travel_unit_price,
+          dn.vehicle_count, dn.travel_hours_qty, dn.travel_hours_time,
+          dn.travel_hours_unit_price, dn.workspace_id,
+          dn.created_at, dn.updated_at, dn.created_by,
+          di.id as item_id, di.debit_note_id as item_debit_note_id,
+          di.product_code as item_product_code, di.size as item_size,
+          di.quantity as item_quantity, di.unit_price as item_unit_price,
+          di.line_total as item_line_total, di.item_type as item_item_type,
+          di.hours as item_hours, di.inspection_content as item_inspection_content
+        FROM debit_notes dn
+        LEFT JOIN debit_note_items di ON di.debit_note_id = dn.id
+        WHERE dn.workspace_id = ${workspaceId}
+        ORDER BY dn.created_at DESC
+      `;
+    } else if (workspaceId === null) {
+      rows = await sql`
+        SELECT
+          dn.id, dn.debit_no, dn.customer_id, dn.customer_name,
+          dn.inspection_record_id, dn.inspection_report_id,
+          dn.unit_price_goods, dn.unit_price_qc, dn.unit_price_ot,
+          dn.notes, dn.travel_allowance, dn.travel_days, dn.travel_unit_price,
+          dn.vehicle_count, dn.travel_hours_qty, dn.travel_hours_time,
+          dn.travel_hours_unit_price, dn.workspace_id,
+          dn.created_at, dn.updated_at, dn.created_by,
+          di.id as item_id, di.debit_note_id as item_debit_note_id,
+          di.product_code as item_product_code, di.size as item_size,
+          di.quantity as item_quantity, di.unit_price as item_unit_price,
+          di.line_total as item_line_total, di.item_type as item_item_type,
+          di.hours as item_hours, di.inspection_content as item_inspection_content
+        FROM debit_notes dn
+        LEFT JOIN debit_note_items di ON di.debit_note_id = dn.id
+        ORDER BY dn.created_at DESC
+      `;
+    } else {
+      rows = [];
+    }
 
-      if (workspaceId) {
-        notes = await db.select(selectFields).from(debitNotes)
-          .where(eq(debitNotes.workspaceId, workspaceId));
-      } else if (workspaceId === null) {
-        notes = await db.select(selectFields).from(debitNotes);
+    // Group rows into notes with items
+    const noteMap = new Map<string, any>();
+    for (const row of rows) {
+      if (!noteMap.has(row.id)) {
+        noteMap.set(row.id, {
+          id: row.id,
+          debitNo: row.debit_no,
+          customerId: row.customer_id,
+          customerName: row.customer_name,
+          inspectionRecordId: row.inspection_record_id,
+          inspectionReportId: row.inspection_report_id,
+          unitPriceGoods: row.unit_price_goods,
+          unitPriceQc: row.unit_price_qc,
+          unitPriceOt: row.unit_price_ot,
+          notes: row.notes,
+          travelAllowance: row.travel_allowance,
+          travelDays: row.travel_days,
+          travelUnitPrice: row.travel_unit_price,
+          vehicleCount: row.vehicle_count,
+          travelHoursQty: row.travel_hours_qty,
+          travelHoursTime: row.travel_hours_time,
+          travelHoursUnitPrice: row.travel_hours_unit_price,
+          workspaceId: row.workspace_id,
+          createdAt: row.created_at,
+          updatedAt: row.updated_at,
+          createdBy: row.created_by,
+          items: [],
+        });
       }
-    } catch (queryErr) {
-      // Neon driver bug trên bảng rỗng — trả về []
-      console.error('Debit notes query error (may be empty table):', queryErr);
+      if (row.item_id) {
+        noteMap.get(row.id)!.items.push({
+          id: row.item_id,
+          debitNoteId: row.item_debit_note_id,
+          productCode: row.item_product_code,
+          size: row.item_size,
+          quantity: row.item_quantity,
+          unitPrice: row.item_unit_price,
+          lineTotal: row.item_line_total,
+          itemType: row.item_item_type,
+          hours: row.item_hours,
+          inspectionContent: row.item_inspection_content,
+        });
+      }
     }
 
-    // Fetch all items in 1 query instead of N+1
-    const normalizedNoteIds = notes.map(n => {
-      const nid = isByteArrayString(n.id) ? convertByteArrayToUuid(n.id) : n.id;
-      return nid;
-    });
-
-    const allItems = normalizedNoteIds.length > 0
-      ? await db.select().from(debitNoteItems)
-          .where(inArray(debitNoteItems.debitNoteId, normalizedNoteIds))
-      : [];
-
-    // Group items by debitNoteId
-    const itemsByNoteId = new Map<string, any[]>();
-    for (const item of allItems) {
-      const key = isByteArrayString(item.debitNoteId) ? convertByteArrayToUuid(item.debitNoteId) : item.debitNoteId;
-      if (!itemsByNoteId.has(key)) itemsByNoteId.set(key, []);
-      itemsByNoteId.get(key)!.push(item);
-    }
-
-    const notesWithItems = notes.map(r => {
-      const normalizedId = isByteArrayString(r.id) ? convertByteArrayToUuid(r.id) : r.id;
-      const normalizedCustomerId = isByteArrayString(r.customerId) ? convertByteArrayToUuid(r.customerId) : r.customerId;
-      const normalizedInspectionRecordId = r.inspectionRecordId && isByteArrayString(r.inspectionRecordId)
-        ? convertByteArrayToUuid(r.inspectionRecordId)
-        : r.inspectionRecordId;
-      const normalizedInspectionReportId = r.inspectionReportId && isByteArrayString(r.inspectionReportId)
-        ? convertByteArrayToUuid(r.inspectionReportId)
-        : r.inspectionReportId;
-
-      return {
-        ...r,
-        id: normalizedId,
-        customerId: normalizedCustomerId,
-        inspectionRecordId: normalizedInspectionRecordId,
-        inspectionReportId: normalizedInspectionReportId,
-        items: itemsByNoteId.get(normalizedId) || [],
-      };
-    });
-
-    res.json(notesWithItems);
+    res.json(Array.from(noteMap.values()));
   } catch (err) {
     console.error(err);
     res.status(500).json({ error: 'Failed to fetch debit notes', details: err instanceof Error ? err.message : String(err) });
