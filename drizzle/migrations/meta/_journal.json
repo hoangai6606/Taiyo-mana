@@ -15,6 +15,13 @@
       "when": 1774842000000,
       "tag": "0001_add_productivity_tracking_columns",
       "breakpoints": true
+    },
+    {
+      "idx": 2,
+      "version": "7",
+      "when": 1774928400000,
+      "tag": "0002_add_inspection_report_id_to_debit_notes",
+      "breakpoints": true
     }
   ]
 }

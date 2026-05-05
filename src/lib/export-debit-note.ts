@@ -170,7 +170,7 @@ export async function exportDebitNote(note: DebitNote): Promise<void> {
 
   // Grand total
   const grandRow = rowIdx;
-  aoa.push(['TỔNG CỘNG:', grandTotal]);
+  aoa.push(['TỔNG CỘNG:', '', '', '', '', grandTotal]);
 
   // ── Create worksheet ──
   const ws = XLSX.utils.aoa_to_sheet(aoa);
