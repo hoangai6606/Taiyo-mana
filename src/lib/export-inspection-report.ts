@@ -1,23 +1,25 @@
 import type { InspectionRecord, InspectionItem } from './database.types';
 
 const SIZE_ORDER = ['SS', 'S', 'M', 'L', 'LL', 'EL', '3L', '4L', '5L', '6L', '7L', '8L'];
-const NUM_COLS = 29;
+const NUM_COLS = 31;
 
 // Column indices (0-based)
 export const COL = {
   CODE: 0, BRAND: 1, NAME: 2, COLOR: 3, SIZE: 4,
-  ORDER_QTY: 5,
-  // So luong group
-  PASSED_KK: 6, TOTAL_EXPORT: 7,
-  // Kiem Hang group
-  INSPECT_QTY: 8, PASSED_QTY: 9, DEFECTIVE_QTY: 10,
-  SPEC: 11, ACC: 12, APP: 13, FAB: 14, DIRTY: 15, SEAM: 16, PRINT_DEFECT: 17,
-  SOLE_DEFECT: 18, SCRATCH_DEFECT: 19, OTHER: 20,
-  METAL: 21,
-  RATE: 22,
-  // Tai kiem group
-  REINSPECT_QTY: 23, TK_PASSED: 24, TK_FAILED: 25,
-  TK_SPEC: 26, TK_ACC: 27, TK_APP: 28,
+  // Kiem Hang group (14 cols)
+  INSPECT_QTY: 5, PASSED_QTY: 6, DEFECTIVE_QTY: 7,
+  SPEC: 8, ACC: 9, APP: 10, FAB: 11, DIRTY: 12, SEAM: 13, PRINT_DEFECT: 14,
+  SOLE_DEFECT: 15, SCRATCH_DEFECT: 16, OTHER: 17,
+  METAL: 18,
+  // Tai kiem group (6 cols)
+  REINSPECT_QTY: 19, TK_PASSED: 20, TK_FAILED: 21,
+  TK_SPEC: 22, TK_ACC: 23, TK_APP: 24,
+  // So luong group (6 cols)
+  ORDER_QTY: 25,
+  PASSED_KK: 26, TOTAL_EXPORT: 27,
+  RATE: 28,
+  ORDER_SL: 29,
+  PARKING_LIST: 30,
 };
 
 export interface VRow {
@@ -40,6 +42,7 @@ export interface VRow {
   metal: number;
   defectiveQty: number;
   rate: number;
+  orderSl: number;
   // Reinspection fields (new format)
   tkPassed: number;
   tkFailed: number;
@@ -72,6 +75,7 @@ export function zeroVRow(): VRow {
     passedKk: 0, totalExport: 0,
     spec: 0, acc: 0, app: 0, fab: 0, dirty: 0, seam: 0, other: 0, print: 0, sole: 0, scratch: 0, metal: 0, defectiveQty: 0, rate: 0,
     tkPassed: 0, tkFailed: 0, tkSpec: '', tkAcc: '', tkApp: '', tkPrint: 0, tkSole: 0, tkScratch: 0,
+    orderSl: 0,
   };
 }
 
@@ -99,6 +103,7 @@ export function addTo(a: VRow, b: VRow): void {
   a.tkPrint += b.tkPrint;
   a.tkSole += b.tkSole;
   a.tkScratch += b.tkScratch;
+  a.orderSl += b.orderSl;
 }
 
 export function calcRate(v: VRow): number {
@@ -184,17 +189,21 @@ export function buildGroups(items: InspectionItem[]): ProductGroup[] {
           ? Math.round(totalDefects / inspectQty * 10000) / 100
           : 0;
 
+        const passedQty = sum(i => i.passedQuantity || 0);
+        const tkPassed = sum(i => i.reinspectPassed || 0);
+        const tkFailed = sum(i => i.reinspectFailed || 0);
         const v: Variant = {
           color, size,
           orderQty: inspectQty + reinspectQty,
           inspectQty, reinspectQty,
-          passedQty: sum(i => i.passedQuantity || 0),
-          passedKk: 0,
+          passedQty,
+          passedKk: passedQty + tkPassed,
           totalExport: 0,
           defectiveQty: sum(i => i.defectiveQuantity || 0),
           spec, acc, app, fab, dirty, seam, other, print, sole, scratch, metal, rate,
-          tkPassed: sum(i => i.reinspectPassed || 0),
-          tkFailed: sum(i => i.reinspectFailed || 0),
+          tkPassed,
+          tkFailed,
+          orderSl: passedQty + tkPassed + tkFailed,
           tkSpec: concat(i => i.reinspectSpecifications || ''),
           tkAcc: concat(i => i.reinspectAccessories || ''),
           tkApp: concat(i => i.reinspectAppearance || ''),
@@ -229,16 +238,18 @@ export function buildGroups(items: InspectionItem[]): ProductGroup[] {
           ? Math.round(totalDefects / inspectQty * 10000) / 100
           : 0;
 
+        const passedQty = s(kiem, i => i.passedQuantity || 0);
         const v: Variant = {
           color, size,
           orderQty: inspectQty + reinspectQty,
           inspectQty, reinspectQty,
-          passedQty: s(kiem, i => i.passedQuantity || 0),
-          passedKk: 0,
+          passedQty,
+          passedKk: passedQty,
           totalExport: 0,
           defectiveQty: s(kiem, i => i.defectiveQuantity || 0),
           spec, acc, app, fab, dirty, seam, other, print: 0, sole: 0, scratch: 0, metal, rate,
           tkPassed: 0, tkFailed: 0, tkSpec: '', tkAcc: '', tkApp: '', tkPrint: 0, tkSole: 0, tkScratch: 0,
+          orderSl: passedQty,
         };
 
         variants.push(v);
@@ -296,17 +307,13 @@ export async function exportInspectionReportFromGroups(
   h1[COL.NAME] = 'Tên hàng';
   h1[COL.COLOR] = 'Màu';
   h1[COL.SIZE] = 'Size';
-  h1[COL.ORDER_QTY] = 'SLĐH';
-  h1[COL.PASSED_KK] = 'Số lượng';
   h1[COL.INSPECT_QTY] = 'KIỂM HÀNG';
-  h1[COL.RATE] = 'Tỉ lệ lỗi';
   h1[COL.REINSPECT_QTY] = 'TÁI KIỂM';
+  h1[COL.ORDER_QTY] = 'Số lượng';
   aoa.push(h1);
 
   // Row 3: Detail headers
   const detailRow: any[] = Array(NUM_COLS).fill('');
-  detailRow[COL.PASSED_KK] = 'SL hàng đạt KK';
-  detailRow[COL.TOTAL_EXPORT] = 'TỔNG XUẤT';
   detailRow[COL.INSPECT_QTY] = 'SL kiểm lần 1';
   detailRow[COL.PASSED_QTY] = 'Hàng A1';
   detailRow[COL.DEFECTIVE_QTY] = 'Hàng B1';
@@ -327,6 +334,12 @@ export async function exportInspectionReportFromGroups(
   detailRow[COL.TK_SPEC] = 'Thông số';
   detailRow[COL.TK_ACC] = 'Phụ liệu';
   detailRow[COL.TK_APP] = 'Ngoại quan';
+  detailRow[COL.ORDER_QTY] = 'SL đơn hàng';
+  detailRow[COL.PASSED_KK] = 'SL tổng A';
+  detailRow[COL.TOTAL_EXPORT] = 'TỔNG XUẤT';
+  detailRow[COL.RATE] = 'Tỉ lệ lỗi';
+  detailRow[COL.ORDER_SL] = 'SL order';
+  detailRow[COL.PARKING_LIST] = 'Parking list';
   aoa.push(detailRow);
 
   // Data rows
@@ -360,6 +373,8 @@ export async function exportInspectionReportFromGroups(
       row[COL.SCRATCH_DEFECT] = v.scratch;
       row[COL.METAL] = v.metal;
       row[COL.RATE] = v.rate;
+      row[COL.ORDER_SL] = v.orderSl;
+      row[COL.PARKING_LIST] = v.passedKk;
       row[COL.REINSPECT_QTY] = v.reinspectQty;
       row[COL.TK_PASSED] = v.tkPassed;
       row[COL.TK_FAILED] = v.tkFailed;
@@ -391,6 +406,8 @@ export async function exportInspectionReportFromGroups(
     totalRow[COL.SCRATCH_DEFECT] = g.total.scratch;
     totalRow[COL.METAL] = g.total.metal;
     totalRow[COL.RATE] = g.total.rate;
+    totalRow[COL.ORDER_SL] = g.total.orderSl;
+    totalRow[COL.PARKING_LIST] = g.total.passedKk;
     totalRow[COL.REINSPECT_QTY] = g.total.reinspectQty;
     totalRow[COL.TK_PASSED] = g.total.tkPassed;
     totalRow[COL.TK_FAILED] = g.total.tkFailed;
@@ -425,6 +442,8 @@ export async function exportInspectionReportFromGroups(
   grandRow[COL.SCRATCH_DEFECT] = globalTotal.scratch;
   grandRow[COL.METAL] = globalTotal.metal;
   grandRow[COL.RATE] = globalTotal.rate;
+  grandRow[COL.ORDER_SL] = globalTotal.orderSl;
+  grandRow[COL.PARKING_LIST] = globalTotal.passedKk;
   grandRow[COL.REINSPECT_QTY] = globalTotal.reinspectQty;
   grandRow[COL.TK_PASSED] = globalTotal.tkPassed;
   grandRow[COL.TK_FAILED] = globalTotal.tkFailed;
@@ -451,16 +470,12 @@ export async function exportInspectionReportFromGroups(
     { s: { r: 2, c: COL.NAME }, e: { r: 3, c: COL.NAME } },
     { s: { r: 2, c: COL.COLOR }, e: { r: 3, c: COL.COLOR } },
     { s: { r: 2, c: COL.SIZE }, e: { r: 3, c: COL.SIZE } },
-    // "SLĐH" vertical merge
-    { s: { r: 2, c: COL.ORDER_QTY }, e: { r: 3, c: COL.ORDER_QTY } },
-    // "So luong" spans PASSED_KK to TOTAL_EXPORT
-    { s: { r: 2, c: COL.PASSED_KK }, e: { r: 2, c: COL.TOTAL_EXPORT } },
-    // "KIEM HANG" spans INSPECT_QTY to METAL
+    // "KIEM HANG" spans INSPECT_QTY to METAL (14 cols)
     { s: { r: 2, c: COL.INSPECT_QTY }, e: { r: 2, c: COL.METAL } },
-    // "Tỉ lệ lỗi" vertical merge
-    { s: { r: 2, c: COL.RATE }, e: { r: 3, c: COL.RATE } },
-    // "TÁI KIỂM" spans REINSPECT_QTY to TK_APP
+    // "TÁI KIỂM" spans REINSPECT_QTY to TK_APP (6 cols)
     { s: { r: 2, c: COL.REINSPECT_QTY }, e: { r: 2, c: COL.TK_APP } },
+    // "So luong" spans ORDER_QTY to PARKING_LIST (6 cols)
+    { s: { r: 2, c: COL.ORDER_QTY }, e: { r: 2, c: COL.PARKING_LIST } },
   ];
 
   // Data merges: product code / brand / name per group (variant rows only)
@@ -480,15 +495,14 @@ export async function exportInspectionReportFromGroups(
   // Column widths
   ws['!cols'] = [
     { wch: 12 }, { wch: 10 }, { wch: 20 }, { wch: 8 }, { wch: 6 },
-    { wch: 8 },
-    { wch: 14 }, { wch: 12 },
     { wch: 13 }, { wch: 12 }, { wch: 12 },
     { wch: 10 }, { wch: 10 }, { wch: 10 }, { wch: 8 }, { wch: 8 }, { wch: 10 }, { wch: 8 },
     { wch: 10 }, { wch: 10 }, { wch: 10 },
     { wch: 10 },
-    { wch: 12 },
     { wch: 12 }, { wch: 10 }, { wch: 10 },
     { wch: 14 }, { wch: 14 }, { wch: 14 },
+    { wch: 12 }, { wch: 12 }, { wch: 12 }, { wch: 12 },
+    { wch: 12 }, { wch: 14 },
   ];
 
   // ── Styles ──

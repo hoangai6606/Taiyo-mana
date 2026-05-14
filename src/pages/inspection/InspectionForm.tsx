@@ -244,15 +244,24 @@ export default function InspectionForm({ onBack, onSaved, editRecord }: Props) {
         // Ưu tiên lấy năm từ inspectionDate vì đây là ngày kiểm hàng chính
         const parseDMDate = (val: string): string => {
           const parts = val.split('/');
-          if (parts.length !== 2) return form.inspectionDate;
+          if (parts.length < 2 || parts.length > 3) return form.inspectionDate;
           const day = parseInt(parts[0], 10);
           const month = parseInt(parts[1], 10);
           // Validate: day 1-31, month 1-12
           if (isNaN(day) || isNaN(month) || day < 1 || day > 31 || month < 1 || month > 12) {
             return form.inspectionDate;
           }
-          // Lấy năm từ inspectionDate (đây là ngày kiểm hàng chính)
-          const year = new Date(form.inspectionDate).getFullYear();
+          let year: number;
+          if (parts.length === 3) {
+            year = parseInt(parts[2], 10);
+            if (isNaN(year)) return form.inspectionDate;
+            if (year < 100) {
+              year = year < 50 ? 2000 + year : 1900 + year;
+            }
+          } else {
+            // Lấy năm từ inspectionDate (đây là ngày kiểm hàng chính)
+            year = new Date(form.inspectionDate).getFullYear();
+          }
           return `${year}-${String(month).padStart(2, '0')}-${String(day).padStart(2, '0')}`;
         };
 

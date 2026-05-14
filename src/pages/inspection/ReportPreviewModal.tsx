@@ -14,7 +14,7 @@ import {
 } from '../../lib/export-inspection-report';
 
 // Editable numeric fields
-type EditableField = 'inspectQty' | 'reinspectQty' | 'passedQty' | 'passedKk' | 'totalExport' | 'defectiveQty'
+type EditableField = 'inspectQty' | 'reinspectQty' | 'passedQty' | 'totalExport' | 'defectiveQty'
   | 'spec' | 'acc' | 'app' | 'fab' | 'dirty' | 'seam' | 'other' | 'print' | 'sole' | 'scratch' | 'metal'
   | 'tkPassed' | 'tkFailed' | 'tkPrint' | 'tkSole' | 'tkScratch';
 
@@ -69,6 +69,8 @@ export default function ReportPreviewModal({ record, onClose }: Props) {
             if (vidx !== vi) return v;
             const u: Variant = { ...v, [field]: val };
             u.orderQty = u.inspectQty + u.reinspectQty;
+            u.passedKk = u.passedQty + u.tkPassed;
+            u.orderSl = u.passedQty + u.tkPassed + u.tkFailed;
             u.rate = calcRate(u);
             return u;
           });
@@ -106,10 +108,14 @@ export default function ReportPreviewModal({ record, onClose }: Props) {
     });
   };
 
-  // Numeric fields for So luong group (2 cols)
-  const qtyFields: { key: EditableField; label: string }[] = [
-    { key: 'passedKk', label: 'SLHĐ KK' },
-    { key: 'totalExport', label: 'TỔNG XUẤT' },
+  // End group fields (6 cols) — "Số lượng" at the end
+  const endFields: { id: string; key: keyof VRow; label: string }[] = [
+    { id: 'orderQty', key: 'orderQty', label: 'SL đơn hàng' },
+    { id: 'passedKk', key: 'passedKk', label: 'SL tổng A' },
+    { id: 'totalExport', key: 'totalExport', label: 'TỔNG XUẤT' },
+    { id: 'rate', key: 'rate', label: 'Tỉ lệ lỗi' },
+    { id: 'orderSl', key: 'orderSl', label: 'SL order' },
+    { id: 'parkingList', key: 'passedKk', label: 'Parking list' },
   ];
 
   // Numeric fields for Kiem Hang group (14 cols)
@@ -182,17 +188,12 @@ export default function ReportPreviewModal({ record, onClose }: Props) {
                 <th className="border border-slate-400 px-2 py-1.5 text-center font-bold align-middle" rowSpan={2}>Tên hàng</th>
                 <th className="border border-slate-400 px-2 py-1.5 text-center font-bold align-middle" rowSpan={2}>Màu</th>
                 <th className="border border-slate-400 px-2 py-1.5 text-center font-bold align-middle" rowSpan={2}>Size</th>
-                <th className="border border-slate-400 px-2 py-1 text-center font-bold" rowSpan={2}>SLĐH</th>
-                <th className="border border-slate-400 px-2 py-1 text-center font-bold" colSpan={2}>Số lượng</th>
                 <th className="border border-slate-400 px-2 py-1 text-center font-bold" colSpan={14}>KIỂM HÀNG</th>
-                <th className="border border-slate-400 px-2 py-1.5 text-center font-bold align-middle" rowSpan={2}>Tỉ lệ lỗi</th>
                 <th className="border border-[#E97451] px-2 py-1 text-center font-bold" colSpan={6}>TÁI KIỂM</th>
+                <th className="border border-slate-400 px-2 py-1 text-center font-bold" colSpan={6}>Số lượng</th>
               </tr>
               {/* Detail header row */}
               <tr className="bg-[#4472C4] text-white">
-                {qtyFields.map(f => (
-                  <th key={f.key} className="border border-slate-400 px-2 py-1 text-center font-bold">{f.label}</th>
-                ))}
                 {inspectFields.map(f => (
                   <th key={f.key} className="border border-slate-400 px-2 py-1 text-center font-bold">{f.label}</th>
                 ))}
@@ -201,6 +202,9 @@ export default function ReportPreviewModal({ record, onClose }: Props) {
                 ))}
                 {reinspectTextFields.map(f => (
                   <th key={f.key} className="border border-[#E97451] px-2 py-1 text-center font-bold">{f.label}</th>
+                ))}
+                {endFields.map(f => (
+                  <th key={f.id} className="border border-slate-400 px-2 py-1 text-center font-bold">{f.label}</th>
                 ))}
               </tr>
             </thead>
@@ -213,7 +217,6 @@ export default function ReportPreviewModal({ record, onClose }: Props) {
                     group={g}
                     gi={gi}
                     variantCount={vc}
-                    qtyFields={qtyFields}
                     inspectFields={inspectFields}
                     reinspectNumFields={reinspectNumFields}
                     reinspectTextFields={reinspectTextFields}
@@ -226,20 +229,21 @@ export default function ReportPreviewModal({ record, onClose }: Props) {
               {/* Grand total */}
               <tr className="bg-[#BDD7EE] font-bold">
                 <td className="border border-slate-300 px-2 py-1 text-center" colSpan={5}>Tổng Cộng</td>
-                <td className="border border-slate-300 px-2 py-1 text-right">{grandTotal.orderQty}</td>
-                {qtyFields.map(f => (
-                  <td key={f.key} className="border border-slate-300 px-2 py-1 text-right">{grandTotal[f.key]}</td>
-                ))}
                 {inspectFields.map(f => (
                   <td key={f.key} className="border border-slate-300 px-2 py-1 text-right">{grandTotal[f.key]}</td>
                 ))}
-                <td className="border border-slate-300 px-2 py-1 text-right">{grandTotal.rate}</td>
                 {reinspectNumFields.map(f => (
                   <td key={f.key} className="border border-slate-300 px-2 py-1 text-right">{grandTotal[f.key]}</td>
                 ))}
                 {reinspectTextFields.map(f => (
                   <td key={f.key} className="border border-slate-300 px-2 py-1">{grandTotal[f.key]}</td>
                 ))}
+                <td className="border border-slate-300 px-2 py-1 text-right">{grandTotal.orderQty}</td>
+                <td className="border border-slate-300 px-2 py-1 text-right">{grandTotal.passedKk}</td>
+                <td className="border border-slate-300 px-2 py-1 text-right">{grandTotal.totalExport}</td>
+                <td className="border border-slate-300 px-2 py-1 text-right">{grandTotal.rate}</td>
+                <td className="border border-slate-300 px-2 py-1 text-right">{grandTotal.orderSl}</td>
+                <td className="border border-slate-300 px-2 py-1 text-right">{grandTotal.passedKk}</td>
               </tr>
             </tbody>
           </table>
@@ -255,7 +259,6 @@ function ReportGroup({
   group,
   gi,
   variantCount,
-  qtyFields,
   inspectFields,
   reinspectNumFields,
   reinspectTextFields,
@@ -265,7 +268,6 @@ function ReportGroup({
   group: ProductGroup;
   gi: number;
   variantCount: number;
-  qtyFields: { key: EditableField; label: string }[];
   inspectFields: { key: EditableField; label: string }[];
   reinspectNumFields: { key: EditableField; label: string }[];
   reinspectTextFields: { key: TextField; label: string }[];
@@ -285,18 +287,6 @@ function ReportGroup({
           ) : null}
           <td className="border border-slate-300 px-2 py-1 text-center">{v.color}</td>
           <td className="border border-slate-300 px-2 py-1 text-center">{v.size}</td>
-          {/* SLĐH — auto-computed */}
-          <td className="border border-slate-300 px-2 py-1 text-right">{v.orderQty}</td>
-          {/* So luong fields */}
-          {qtyFields.map(f => (
-            <td key={f.key} className="border border-slate-300 px-1 py-0.5">
-              <NumberInput
-                value={Number(v[f.key]) || 0}
-                className="w-14 px-1 py-0.5 border rounded text-xs text-right"
-                onChange={val => onChange(gi, vi, f.key, String(val))}
-              />
-            </td>
-          ))}
           {/* Kiem Hang fields */}
           {inspectFields.map(f => (
             <td key={f.key} className="border border-slate-300 px-1 py-0.5">
@@ -307,8 +297,6 @@ function ReportGroup({
               />
             </td>
           ))}
-          {/* Rate — auto-computed */}
-          <td className="border border-slate-300 px-2 py-1 text-right">{v.rate}</td>
           {/* Reinspection numeric fields */}
           {reinspectNumFields.map(f => (
             <td key={f.key} className="border border-orange-200 px-1 py-0.5">
@@ -330,26 +318,40 @@ function ReportGroup({
               />
             </td>
           ))}
+          {/* So luong group — end columns */}
+          <td className="border border-slate-300 px-2 py-1 text-right">{v.orderQty}</td>
+          <td className="border border-slate-300 px-2 py-1 text-right">{v.passedKk}</td>
+          <td className="border border-slate-300 px-1 py-0.5">
+            <NumberInput
+              value={Number(v.totalExport) || 0}
+              className="w-14 px-1 py-0.5 border rounded text-xs text-right"
+              onChange={val => onChange(gi, vi, 'totalExport', String(val))}
+            />
+          </td>
+          <td className="border border-slate-300 px-2 py-1 text-right">{v.rate}</td>
+          <td className="border border-slate-300 px-2 py-1 text-right">{v.orderSl}</td>
+          <td className="border border-slate-300 px-2 py-1 text-right">{v.passedKk}</td>
         </tr>
       ))}
 
       {/* Group total */}
       <tr className="bg-[#D9D9D9] font-bold">
         <td className="border border-slate-300 px-2 py-1 text-center" colSpan={5}>Tổng</td>
-        <td className="border border-slate-300 px-2 py-1 text-right">{group.total.orderQty}</td>
-        {qtyFields.map(f => (
-          <td key={f.key} className="border border-slate-300 px-2 py-1 text-right">{group.total[f.key]}</td>
-        ))}
         {inspectFields.map(f => (
           <td key={f.key} className="border border-slate-300 px-2 py-1 text-right">{group.total[f.key]}</td>
         ))}
-        <td className="border border-slate-300 px-2 py-1 text-right">{group.total.rate}</td>
         {reinspectNumFields.map(f => (
           <td key={f.key} className="border border-orange-200 px-2 py-1 text-right">{group.total[f.key]}</td>
         ))}
         {reinspectTextFields.map(f => (
           <td key={f.key} className="border border-orange-200 px-2 py-1">{group.total[f.key]}</td>
         ))}
+        <td className="border border-slate-300 px-2 py-1 text-right">{group.total.orderQty}</td>
+        <td className="border border-slate-300 px-2 py-1 text-right">{group.total.passedKk}</td>
+        <td className="border border-slate-300 px-2 py-1 text-right">{group.total.totalExport}</td>
+        <td className="border border-slate-300 px-2 py-1 text-right">{group.total.rate}</td>
+        <td className="border border-slate-300 px-2 py-1 text-right">{group.total.orderSl}</td>
+        <td className="border border-slate-300 px-2 py-1 text-right">{group.total.passedKk}</td>
       </tr>
     </>
   );
