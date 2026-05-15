@@ -1,6 +1,6 @@
 import { useState, useEffect } from 'react';
 import { api } from '../../lib/api';
-import type { DebitNote, InspectionReport, Factory } from '../../lib/database.types';
+import type { DebitNote, InspectionReport, Factory, CustomTable } from '../../lib/database.types';
 import { Plus, X, Eye, Download } from 'lucide-react';
 import DebitNoteDetail from './DebitNoteDetail';
 import { exportDebitNote } from '../../lib/export-debit-note';
@@ -46,7 +46,20 @@ export default function DebitNotesPage() {
 
   const calcTotal = (note: DebitNote): number => {
     const travelHours = (Number(note.travelHoursQty) || 0) * (Number(note.travelHoursTime) || 0) * (Number(note.travelHoursUnitPrice) || 0);
-    return (note.items || []).reduce((sum, i) => sum + Number(i.lineTotal), 0) + Number(note.travelAllowance || 0) + travelHours;
+    const customTotal = calculateCustomTotalFromData(note.customData);
+    return (note.items || []).reduce((sum, i) => sum + Number(i.lineTotal), 0) + Number(note.travelAllowance || 0) + travelHours + customTotal;
+  };
+
+  const calculateCustomTotalFromData = (customData?: string | null): number => {
+    if (!customData) return 0;
+    try {
+      const tables: CustomTable[] = JSON.parse(customData);
+      return tables.reduce((total, table) => {
+        return total + table.rows.reduce((tableSum, row) => tableSum + row.reduce((product, val) => product * (val || 0), 1), 0);
+      }, 0);
+    } catch {
+      return 0;
+    }
   };
 
   const handleExport = async (id: string) => {
@@ -153,6 +166,7 @@ function CreateModal({ onClose, onCreated }: { onClose: () => void; onCreated: (
   const [travelHoursTime, setTravelHoursTime] = useState<number>(0);
   const [travelHoursUnitPrice, setTravelHoursUnitPrice] = useState<number>(0);
   const travelHoursTotal = travelHoursQty * travelHoursTime * travelHoursUnitPrice;
+  const [customTables, setCustomTables] = useState<CustomTable[]>([]);
   const [saving, setSaving] = useState(false);
   const [hoursMap, setHoursMap] = useState<Map<string, { qcHours: number; otHours: number }>>(new Map());
   const [error, setError] = useState<string>('');
@@ -232,7 +246,7 @@ function CreateModal({ onClose, onCreated }: { onClose: () => void; onCreated: (
             const seen = new Set<string>();
             for (const i of reportGoodsItems) {
               const code = i.productCode || '';
-              if (i.passedQuantity && i.passedQuantity > 0) {
+              if (i.inspectedQuantity && i.inspectedQuantity > 0) {
                 const key = `${code}_Kiểm hàng`;
                 if (!seen.has(key)) {
                   seen.add(key);
@@ -296,7 +310,7 @@ function CreateModal({ onClose, onCreated }: { onClose: () => void; onCreated: (
           const seen = new Set<string>();
           for (const i of reportGoodsItems) {
             const code = i.productCode || '';
-            if (i.passedQuantity && i.passedQuantity > 0) {
+            if (i.inspectedQuantity && i.inspectedQuantity > 0) {
               const key = `${code}_Kiểm hàng`;
               if (!seen.has(key)) {
                 seen.add(key);
@@ -327,16 +341,16 @@ function CreateModal({ onClose, onCreated }: { onClose: () => void; onCreated: (
   const goodsByKey = new Map<string, GoodsGroupedItem>();
   for (const item of goodsItems) {
     // Split into "Kiểm hàng" (passed) and "Tái kiểm" (defective)
-    if (item.passedQuantity && item.passedQuantity > 0) {
+    if (item.inspectedQuantity && item.inspectedQuantity > 0) {
       const content = 'Kiểm hàng';
       const key = `${item.productCode || ''}_${content}`;
       const existing = goodsByKey.get(key);
       if (existing) {
-        existing.quantity += item.passedQuantity;
+        existing.quantity += item.inspectedQuantity;
       } else {
         goodsByKey.set(key, {
           productCode: item.productCode || '',
-          quantity: item.passedQuantity,
+          quantity: item.inspectedQuantity,
           inspectionContent: content,
         });
       }
@@ -383,8 +397,71 @@ function CreateModal({ onClose, onCreated }: { onClose: () => void; onCreated: (
     }, 0);
   };
 
+  const calculateCustomTotal = () => {
+    return customTables.reduce((total, table) => {
+      return total + table.rows.reduce((tableSum, row) => tableSum + row.reduce((product, val) => product * (val || 0), 1), 0);
+    }, 0);
+  };
+
+  const addCustomTable = () => {
+    setCustomTables(prev => [...prev, {
+      name: `Bảng tính ${prev.length + 1}`,
+      columnNames: ['Số lượng', 'Đơn giá'],
+      rows: [[0, 0]],
+    }]);
+  };
+
+  const removeCustomTable = (index: number) => {
+    setCustomTables(prev => prev.filter((_, i) => i !== index));
+  };
+
+  const updateCustomTableName = (tableIndex: number, name: string) => {
+    setCustomTables(prev => prev.map((t, i) => i === tableIndex ? { ...t, name } : t));
+  };
+
+  const updateCustomTableColumnCount = (tableIndex: number, count: number) => {
+    setCustomTables(prev => prev.map((t, i) => {
+      if (i !== tableIndex) return t;
+      const newCols = Array.from({ length: count }, (_, ci) => t.columnNames[ci] || `Cột ${ci + 1}`);
+      const newRows = t.rows.map(row => {
+        const newRow = Array.from({ length: count }, (_, ci) => row[ci] ?? 0);
+        return newRow;
+      });
+      return { ...t, columnNames: newCols, rows: newRows };
+    }));
+  };
+
+  const updateCustomTableRowCount = (tableIndex: number, count: number) => {
+    setCustomTables(prev => prev.map((t, i) => {
+      if (i !== tableIndex) return t;
+      const colCount = t.columnNames.length;
+      const newRows = Array.from({ length: count }, (_, ri) =>
+        t.rows[ri] ? [...t.rows[ri]] : Array(colCount).fill(0)
+      );
+      return { ...t, rows: newRows };
+    }));
+  };
+
+  const updateCustomTableColumnName = (tableIndex: number, colIndex: number, name: string) => {
+    setCustomTables(prev => prev.map((t, i) => {
+      if (i !== tableIndex) return t;
+      const newNames = [...t.columnNames];
+      newNames[colIndex] = name;
+      return { ...t, columnNames: newNames };
+    }));
+  };
+
+  const updateCustomTableCell = (tableIndex: number, rowIndex: number, colIndex: number, value: number) => {
+    setCustomTables(prev => prev.map((t, i) => {
+      if (i !== tableIndex) return t;
+      const newRows = t.rows.map(r => [...r]);
+      newRows[rowIndex][colIndex] = value;
+      return { ...t, rows: newRows };
+    }));
+  };
+
   const calculateGrandTotal = () => {
-    return calculateGoodsTotal() + calculateQcTotal() + calculateOtTotal() + travelAllowance + travelHoursTotal;
+    return calculateGoodsTotal() + calculateQcTotal() + calculateOtTotal() + travelAllowance + travelHoursTotal + calculateCustomTotal();
   };
 
   const handleSave = async () => {
@@ -476,6 +553,7 @@ function CreateModal({ onClose, onCreated }: { onClose: () => void; onCreated: (
         travelHoursQty,
         travelHoursTime,
         travelHoursUnitPrice,
+        customData: customTables.length > 0 ? JSON.stringify(customTables) : null,
         items,
       });
 
@@ -805,6 +883,106 @@ function CreateModal({ onClose, onCreated }: { onClose: () => void; onCreated: (
                       </tbody>
                     </table>
                   </div>
+                </div>
+
+                {/* Custom Calculation Tables */}
+                <div>
+                  <div className="flex items-center justify-between mb-2">
+                    <h3 className="text-sm font-medium text-slate-700">Tính tùy chỉnh</h3>
+                    <button
+                      type="button"
+                      onClick={addCustomTable}
+                      className="inline-flex items-center gap-1 px-3 py-1.5 text-sm bg-slate-100 text-slate-700 rounded-lg hover:bg-slate-200"
+                    >
+                      <Plus className="w-3.5 h-3.5" />
+                      Thêm bảng tính
+                    </button>
+                  </div>
+
+                  {customTables.map((table, tIdx) => {
+                    const rowTotals = table.rows.map(row => row.reduce((p, v) => p * (v || 0), 1));
+                    const tableTotal = rowTotals.reduce((s, t) => s + t, 0);
+                    return (
+                      <div key={tIdx} className="mb-4 border border-slate-200 rounded-lg p-4">
+                        <div className="flex items-center justify-between mb-3">
+                          <input
+                            type="text"
+                            value={table.name}
+                            onChange={(e) => updateCustomTableName(tIdx, e.target.value)}
+                            className="text-sm font-semibold text-slate-800 border-b border-transparent hover:border-slate-300 focus:border-blue-500 focus:outline-none px-1 py-0.5"
+                          />
+                          <button
+                            type="button"
+                            onClick={() => removeCustomTable(tIdx)}
+                            className="text-red-400 hover:text-red-600 p-1"
+                          >
+                            <X className="w-4 h-4" />
+                          </button>
+                        </div>
+                        <div className="flex gap-3 mb-3">
+                          <div className="flex items-center gap-2">
+                            <label className="text-xs text-slate-500">Số cột:</label>
+                            <NumberInput
+                              value={table.columnNames.length}
+                              onChange={(val) => updateCustomTableColumnCount(tIdx, Math.max(2, val))}
+                              className="w-16 px-2 py-1 border border-slate-300 rounded text-sm text-center"
+                              min={2}
+                            />
+                          </div>
+                          <div className="flex items-center gap-2">
+                            <label className="text-xs text-slate-500">Số hàng:</label>
+                            <NumberInput
+                              value={table.rows.length}
+                              onChange={(val) => updateCustomTableRowCount(tIdx, Math.max(1, val))}
+                              className="w-16 px-2 py-1 border border-slate-300 rounded text-sm text-center"
+                              min={1}
+                            />
+                          </div>
+                        </div>
+                        {/* Column names */}
+                        <div className="overflow-x-auto">
+                          <table className="w-full text-sm" style={{ minWidth: `${(table.columnNames.length + 1) * 120}px` }}>
+                            <thead className="bg-slate-50">
+                              <tr>
+                                {table.columnNames.map((colName, cIdx) => (
+                                  <th key={cIdx} className="px-2 py-1">
+                                    <input
+                                      type="text"
+                                      value={colName}
+                                      onChange={(e) => updateCustomTableColumnName(tIdx, cIdx, e.target.value)}
+                                      className="w-full text-center text-xs font-medium text-slate-600 bg-transparent border-b border-slate-300 focus:border-blue-500 focus:outline-none px-1 py-0.5"
+                                    />
+                                  </th>
+                                ))}
+                                <th className="px-2 py-1 text-xs font-medium text-slate-600 text-right">Thành tiền</th>
+                              </tr>
+                            </thead>
+                            <tbody>
+                              {table.rows.map((row, rIdx) => (
+                                <tr key={rIdx} className="border-t border-slate-100">
+                                  {row.map((cell, cIdx) => (
+                                    <td key={cIdx} className="px-2 py-1">
+                                      <NumberInput
+                                        value={cell}
+                                        onChange={(val) => updateCustomTableCell(tIdx, rIdx, cIdx, val)}
+                                        className="w-full px-2 py-1 border border-slate-300 rounded text-right text-sm focus:outline-none focus:ring-1 focus:ring-blue-500"
+                                        min={0}
+                                      />
+                                    </td>
+                                  ))}
+                                  <td className="px-2 py-1 text-right font-medium">{rowTotals[rIdx].toLocaleString('vi-VN')}</td>
+                                </tr>
+                              ))}
+                              <tr className="border-t border-slate-200 bg-slate-50">
+                                <td colSpan={table.columnNames.length} className="px-2 py-1 text-right font-medium text-sm">Tổng:</td>
+                                <td className="px-2 py-1 text-right font-bold text-sm">{tableTotal.toLocaleString('vi-VN')}</td>
+                              </tr>
+                            </tbody>
+                          </table>
+                        </div>
+                      </div>
+                    );
+                  })}
                 </div>
 
                 {/* Tổng tiền */}

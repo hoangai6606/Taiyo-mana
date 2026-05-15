@@ -222,6 +222,12 @@ export interface ReportItem {
 
 // ─── DEBIT NOTE TYPES ─────────────────────────────────────────────────────────
 
+export interface CustomTable {
+  name: string;
+  columnNames: string[];
+  rows: number[][];
+}
+
 export interface DebitNote {
   id: string;
   debitNo: string;
@@ -240,6 +246,7 @@ export interface DebitNote {
   travelHoursQty?: number;
   travelHoursTime?: number;
   travelHoursUnitPrice?: number;
+  customData?: string | null;
   createdAt: string;
   updatedAt: string;
   createdBy: string | null;

@@ -1,4 +1,4 @@
-import type { DebitNote, DebitNoteItem } from './database.types';
+import type { DebitNote, DebitNoteItem, CustomTable } from './database.types';
 
 const border = {
   top: { style: 'thin', color: { rgb: '000000' } },
@@ -57,7 +57,17 @@ export async function exportDebitNote(note: DebitNote): Promise<void> {
   const travelHoursTime = Number(note.travelHoursTime) || 0;
   const travelHoursUnitPrice = Number(note.travelHoursUnitPrice) || 0;
   const travelHoursTotal = travelHoursQty * travelHoursTime * travelHoursUnitPrice;
-  const grandTotal = goodsTotal + qcTotal + otTotal + travel + travelHoursTotal;
+
+  // Parse custom tables
+  let customTables: CustomTable[] = [];
+  try {
+    customTables = note.customData ? JSON.parse(note.customData) : [];
+  } catch { /* ignore */ }
+  const customTotal = customTables.reduce((total, table) => {
+    return total + table.rows.reduce((tableSum, row) => tableSum + row.reduce((product, val) => product * (val || 0), 1), 0);
+  }, 0);
+
+  const grandTotal = goodsTotal + qcTotal + otTotal + travel + travelHoursTotal + customTotal;
 
   const dateStr = new Date(note.createdAt).toLocaleDateString('vi-VN');
   const aoa: any[][] = [];
@@ -167,6 +177,39 @@ export async function exportDebitNote(note: DebitNote): Promise<void> {
     : '';
   aoa.push(['Giờ đi đường:', travelHoursDesc || '', '', '', '', travelHoursTotal]);
   rowIdx++;
+
+  // Custom tables
+  for (const table of customTables) {
+    const rowTotals = table.rows.map(row => row.reduce((p, v) => p * (v || 0), 1));
+    const tableTotal = rowTotals.reduce((s, t) => s + t, 0);
+    const totalCols = table.columnNames.length + 2; // STT + columns + Thành tiền
+
+    // Section header
+    aoa.push([table.name.toUpperCase()]);
+    rowIdx++;
+
+    // Header row: STT + column names + Thành tiền
+    const headerRow = ['STT', ...table.columnNames, 'Thành tiền'];
+    aoa.push(headerRow);
+    rowIdx++;
+
+    // Data rows
+    for (let r = 0; r < table.rows.length; r++) {
+      aoa.push([r + 1, ...table.rows[r], rowTotals[r]]);
+      rowIdx++;
+    }
+
+    // Total row
+    const totalRowArr = Array(table.columnNames.length).fill('');
+    totalRowArr.unshift('', 'Tổng');
+    totalRowArr.push(tableTotal);
+    aoa.push(totalRowArr);
+    rowIdx++;
+
+    // Empty row
+    aoa.push([]);
+    rowIdx++;
+  }
 
   // Grand total
   const grandRow = rowIdx;

@@ -1,6 +1,6 @@
 import { useState, useEffect } from 'react';
 import { api } from '../../lib/api';
-import type { DebitNote, DebitNoteItem } from '../../lib/database.types';
+import type { DebitNote, DebitNoteItem, CustomTable } from '../../lib/database.types';
 import { X, Download } from 'lucide-react';
 import { exportDebitNote } from '../../lib/export-debit-note';
 
@@ -63,7 +63,17 @@ export default function DebitNoteDetail({ debitNoteId, onClose }: Props) {
   const travelHoursTime = Number(note.travelHoursTime) || 0;
   const travelHoursUnitPrice = Number(note.travelHoursUnitPrice) || 0;
   const travelHoursTotal = travelHoursQty * travelHoursTime * travelHoursUnitPrice;
-  const grandTotal = goodsTotal + qcTotal + otTotal + travel + travelHoursTotal;
+
+  // Parse custom tables
+  let customTables: CustomTable[] = [];
+  try {
+    customTables = note.customData ? JSON.parse(note.customData) : [];
+  } catch { /* ignore invalid JSON */ }
+  const customTotal = customTables.reduce((total, table) => {
+    return total + table.rows.reduce((tableSum, row) => tableSum + row.reduce((product, val) => product * (val || 0), 1), 0);
+  }, 0);
+
+  const grandTotal = goodsTotal + qcTotal + otTotal + travel + travelHoursTotal + customTotal;
 
   // Merge QC and OT items by date (productCode holds date for QC/OT)
   const dateMap = new Map<string, { qc?: DebitNoteItem; ot?: DebitNoteItem }>();
@@ -246,6 +256,45 @@ export default function DebitNoteDetail({ debitNoteId, onClose }: Props) {
                 </p>
               </div>
             )}
+
+            {/* Custom Calculation Tables */}
+            {customTables.length > 0 && customTables.map((table, tIdx) => {
+              const rowTotals = table.rows.map(row => row.reduce((p, v) => p * (v || 0), 1));
+              const tableTotal = rowTotals.reduce((s, t) => s + t, 0);
+              return (
+                <div key={tIdx}>
+                  <h3 className="text-sm font-semibold text-slate-700 mb-2">{table.name}</h3>
+                  <div className="border border-slate-200 rounded-lg overflow-x-auto">
+                    <table className="w-full text-sm">
+                      <thead className="bg-slate-50">
+                        <tr>
+                          <th className="px-3 py-2 text-left font-medium text-slate-600 w-10">STT</th>
+                          {table.columnNames.map((colName, cIdx) => (
+                            <th key={cIdx} className="px-3 py-2 text-right font-medium text-slate-600">{colName}</th>
+                          ))}
+                          <th className="px-3 py-2 text-right font-medium text-slate-600">Thành tiền</th>
+                        </tr>
+                      </thead>
+                      <tbody>
+                        {table.rows.map((row, rIdx) => (
+                          <tr key={rIdx} className="border-t border-slate-100">
+                            <td className="px-3 py-2">{rIdx + 1}</td>
+                            {row.map((cell, cIdx) => (
+                              <td key={cIdx} className="px-3 py-2 text-right">{fmt(cell)}</td>
+                            ))}
+                            <td className="px-3 py-2 text-right">{fmt(rowTotals[rIdx])}</td>
+                          </tr>
+                        ))}
+                        <tr className="border-t border-slate-200 bg-slate-50">
+                          <td colSpan={table.columnNames.length + 1} className="px-3 py-2 text-right font-medium">Tổng:</td>
+                          <td className="px-3 py-2 text-right font-medium">{fmt(tableTotal)}</td>
+                        </tr>
+                      </tbody>
+                    </table>
+                  </div>
+                </div>
+              );
+            })}
 
             {/* Grand total */}
             <div className="bg-blue-50 border border-blue-200 rounded-lg p-4">
