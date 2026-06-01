@@ -143,7 +143,6 @@ export interface ProductivityTracking {
   recordDate: string;
   factoryId: string | null;
   qcQuantity: number;
-  transitQuantity: number;
   ot: number;
 }
 
@@ -181,7 +180,6 @@ export interface ReportProductivity {
   factoryId: string | null;
   factoryName: string;
   qcQuantity: number;
-  transitQuantity: number;
   ot: number;
 }
 

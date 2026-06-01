@@ -86,7 +86,6 @@ export const productivityTracking = pgTable("productivity_tracking", {
 	id: text().primaryKey().notNull(),
 	recordId: text("record_id").notNull(),
 	qcQuantity: integer("qc_quantity"),
-	transitQuantity: integer("transit_quantity"),
 	ot: integer(),
 	recordDate: date("record_date").notNull(),
 	factoryId: text("factory_id"),

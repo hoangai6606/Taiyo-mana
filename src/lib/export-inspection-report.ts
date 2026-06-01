@@ -275,7 +275,6 @@ export interface ProductivityEntry {
   recordDate: string;
   factoryName: string;
   qcQuantity: number;
-  transitQuantity: number;
   ot: number;
 }
 
@@ -506,37 +505,38 @@ export async function exportInspectionReportFromGroups(
   // ── Productivity sheet (Part C) ──
   if (productivity && productivity.length > 0) {
     const pAoa: any[][] = [];
+    const pCols = 6;
 
     // Total inspected across all groups
     const totalInspected = groups.reduce((s, g) => s + g.total.inspectQty + g.total.reinspectQty, 0);
 
-    // Title
+    // Row 0: Title — merged across all columns
     pAoa.push(['THEO DÕI NĂNG SUẤT', '', '', '', '', '']);
 
-    // Info row
-    pAoa.push([`Mã phiếu: ${meta.code}`, '', `Ngày: ${meta.dateStr}`, '', `Nhà máy: ${meta.factoryNames}`, '']);
+    // Row 1: Info — 2 blocks: (Mã phiếu + Ngày) | (Nhà máy)
+    const infoRow: any[] = Array(pCols).fill('');
+    infoRow[0] = `Mã phiếu: ${meta.code}   |   Ngày: ${meta.dateStr}`;
+    infoRow[3] = `Nhà máy: ${meta.factoryNames}`;
+    pAoa.push(infoRow);
 
-    // Header
-    pAoa.push(['Ngày', 'Nhà máy', 'SL QC', 'SL Chuyển', 'OT', 'Năng suất QC/ngày']);
+    // Row 2: Header
+    pAoa.push(['Ngày', 'Nhà máy', 'SL QC', 'OT', 'NS QC/ngày']);
 
     // Data rows
-    let totalQc = 0, totalTransit = 0, totalOt = 0;
+    let totalQc = 0, totalOt = 0;
     for (const p of productivity) {
       totalQc += p.qcQuantity || 0;
-      totalTransit += p.transitQuantity || 0;
       totalOt += p.ot || 0;
       const qcQty = p.qcQuantity || 0;
       const ns = qcQty > 0 ? Math.round(totalInspected / qcQty * 100) / 100 : '';
-      pAoa.push([p.recordDate, p.factoryName || '', p.qcQuantity || 0, p.transitQuantity || 0, p.ot || 0, ns]);
+      pAoa.push([p.recordDate, p.factoryName || '', p.qcQuantity || 0, p.ot || 0, ns]);
     }
 
     // Total row
-    pAoa.push(['Tổng cộng', '', totalQc, totalTransit, totalOt, '-']);
+    pAoa.push(['Tổng cộng', '', totalQc, totalOt, '-']);
 
     const pWs = XLSX.utils.aoa_to_sheet(pAoa);
 
-    // Styles for productivity sheet
-    const pCols = 6;
     const pBorder = {
       top: { style: 'thin', color: { rgb: '000000' } },
       bottom: { style: 'thin', color: { rgb: '000000' } },
@@ -544,47 +544,77 @@ export async function exportInspectionReportFromGroups(
       right: { style: 'thin', color: { rgb: '000000' } },
     };
 
-    // Title style
+    // Title (row 0): bold, large font, centered, merged
     const pTitleRef = XLSX.utils.encode_cell({ r: 0, c: 0 });
     if (pWs[pTitleRef]) {
       pWs[pTitleRef].s = {
         font: { bold: true, sz: 14 },
-        alignment: { horizontal: 'center' },
+        alignment: { horizontal: 'center', vertical: 'center' },
       };
     }
 
-    // Header style (row 2)
+    // Info row (row 1): smaller font, 2 merged blocks
+    const pInfoStyle = {
+      font: { sz: 10, italic: true },
+      alignment: { vertical: 'center' as const },
+    };
+    for (let c = 0; c < pCols; c++) {
+      const ref = XLSX.utils.encode_cell({ r: 1, c });
+      if (pWs[ref]) pWs[ref].s = pInfoStyle;
+    }
+
+    // Header (row 2): blue bg, white bold, wrapText, centered
     const pHeaderStyle = {
       font: { bold: true, color: { rgb: 'FFFFFF' }, sz: 11 },
-      fill: { fgColor: { rgb: '4472C4' }, patternType: 'solid' },
+      fill: { fgColor: { rgb: '4472C4' }, patternType: 'solid' as const },
       border: pBorder,
-      alignment: { horizontal: 'center' as const },
+      alignment: { horizontal: 'center' as const, vertical: 'center' as const, wrapText: true as const },
     };
     for (let c = 0; c < pCols; c++) {
       const ref = XLSX.utils.encode_cell({ r: 2, c });
       if (pWs[ref]) pWs[ref].s = pHeaderStyle;
     }
 
-    // Data rows style
+    // Data rows + total row
     const pTotalRow = pAoa.length - 1;
     for (let r = 3; r < pAoa.length; r++) {
       const isTotal = r === pTotalRow;
-      const style = isTotal
-        ? { font: { bold: true }, fill: { fgColor: { rgb: 'D9D9D9' }, patternType: 'solid' as const }, border: pBorder }
-        : { border: pBorder };
+      const isZebra = (r - 3) % 2 === 1 && !isTotal;
       for (let c = 0; c < pCols; c++) {
         const ref = XLSX.utils.encode_cell({ r, c });
-        if (pWs[ref]) pWs[ref].s = style;
+        if (!pWs[ref]) continue;
+        const baseStyle: any = { border: pBorder };
+        // Right-align number columns (2-5)
+        if (c >= 2 && c <= 5) {
+          baseStyle.alignment = { horizontal: 'right' };
+        }
+        if (isTotal) {
+          baseStyle.font = { bold: true };
+          baseStyle.fill = { fgColor: { rgb: 'BDD7EE' }, patternType: 'solid' };
+        } else if (isZebra) {
+          baseStyle.fill = { fgColor: { rgb: 'F2F2F2' }, patternType: 'solid' };
+        }
+        pWs[ref].s = baseStyle;
       }
     }
 
-    // Merges
+    // Merges: title row, info row (2 blocks)
     pWs['!merges'] = [
       { s: { r: 0, c: 0 }, e: { r: 0, c: pCols - 1 } },
+      { s: { r: 1, c: 0 }, e: { r: 1, c: 2 } },
+      { s: { r: 1, c: 3 }, e: { r: 1, c: 5 } },
     ];
 
+    // Column widths: compact
     pWs['!cols'] = [
-      { wch: 14 }, { wch: 20 }, { wch: 10 }, { wch: 12 }, { wch: 8 }, { wch: 18 },
+      { wch: 14 }, { wch: 18 }, { wch: 10 }, { wch: 12 }, { wch: 8 }, { wch: 16 },
+    ];
+
+    // Row heights
+    pWs['!rows'] = [
+      { hpt: 24 }, // title
+      {}, // info
+      { hpt: 20 }, // header
     ];
 
     XLSX.utils.book_append_sheet(wb, pWs, 'Năng Suất');

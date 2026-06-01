@@ -595,7 +595,6 @@ export default function ReportCreate({ onBack, onSaved }: Props) {
                     <th className="text-left px-3 py-2 font-medium text-slate-600">Ngày</th>
                     <th className="text-left px-3 py-2 font-medium text-slate-600">Nhà máy</th>
                     <th className="text-right px-3 py-2 font-medium text-slate-600">SL QC</th>
-                    <th className="text-right px-3 py-2 font-medium text-slate-600">SL Chuyển</th>
                     <th className="text-right px-3 py-2 font-medium text-slate-600">OT</th>
                   </tr>
                 </thead>
@@ -605,7 +604,6 @@ export default function ReportCreate({ onBack, onSaved }: Props) {
                       <td className="px-3 py-2">{formatDate(p.recordDate)}</td>
                       <td className="px-3 py-2">{p.factoryName || '-'}</td>
                       <td className="px-3 py-2 text-right">{p.qcQuantity}</td>
-                      <td className="px-3 py-2 text-right">{p.transitQuantity}</td>
                       <td className="px-3 py-2 text-right">{p.ot}</td>
                     </tr>
                   ))}
@@ -615,7 +613,6 @@ export default function ReportCreate({ onBack, onSaved }: Props) {
                     <tr className="bg-slate-100 font-medium">
                       <td className="px-3 py-2" colSpan={2}>Tổng cộng</td>
                       <td className="px-3 py-2 text-right">{filteredProductivity.reduce((s, p) => s + (p.qcQuantity || 0), 0)}</td>
-                      <td className="px-3 py-2 text-right">{filteredProductivity.reduce((s, p) => s + (p.transitQuantity || 0), 0)}</td>
                       <td className="px-3 py-2 text-right">{filteredProductivity.reduce((s, p) => s + (p.ot || 0), 0)}</td>
                     </tr>
                   </tfoot>

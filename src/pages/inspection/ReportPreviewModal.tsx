@@ -100,12 +100,18 @@ export default function ReportPreviewModal({ record, onClose }: Props) {
   );
 
   const handleDownload = async () => {
+    const productivityEntries = record.productivity?.map(p => ({
+      recordDate: p.recordDate,
+      factoryName: record.factoryNames || '',
+      qcQuantity: p.qcQuantity,
+      ot: p.ot,
+    }));
     await exportInspectionReportFromGroups(groups, {
       customerName: record.customerName || record.customerId,
       factoryNames: record.factoryNames || '',
       dateStr,
       code: record.code,
-    });
+    }, productivityEntries);
   };
 
   // End group fields (4 cols) — "Số lượng" at the end

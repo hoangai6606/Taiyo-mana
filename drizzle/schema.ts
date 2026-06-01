@@ -192,7 +192,6 @@ export const reportProductivity = pgTable('report_productivity', {
   factoryId: text('factory_id'),
   factoryName: varchar('factory_name', { length: 255 }),
   qcQuantity: integer('qc_quantity'),
-  transitQuantity: integer('transit_quantity'),
   ot: integer('ot'),
 });
 
@@ -215,7 +214,6 @@ export const productivityTracking = pgTable('productivity_tracking', {
   recordDate: date('record_date').notNull(),
   factoryId: text('factory_id'),
   qcQuantity: integer('qc_quantity'),
-  transitQuantity: integer('transit_quantity'),
   ot: integer('ot'),
 });
 

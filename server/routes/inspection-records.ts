@@ -361,7 +361,6 @@ router.post('/', authenticateToken, async (req: Request, res: Response) => {
             recordDate: new Date(entry.recordDate),
             factoryId: entry.factoryId || null,
             qcQuantity: parseInt(entry.qcQuantity) || 0,
-            transitQuantity: parseInt(entry.transitQuantity) || 0,
             ot: parseInt(entry.ot) || 0,
           }))
         );
@@ -512,7 +511,6 @@ router.put('/:id', authenticateToken, async (req: Request, res: Response) => {
           recordDate: new Date(entry.recordDate),
           factoryId: entry.factoryId || null,
           qcQuantity: parseInt(entry.qcQuantity) || 0,
-          transitQuantity: parseInt(entry.transitQuantity) || 0,
           ot: parseInt(entry.ot) || 0,
         }))
       );

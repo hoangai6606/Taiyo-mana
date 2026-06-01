@@ -30,6 +30,7 @@ export default function DebitNotesPage() {
   const [showModal, setShowModal] = useState(false);
   const [selectedNoteId, setSelectedNoteId] = useState<string | null>(null);
   const [exporting, setExporting] = useState<string | null>(null);
+  const [error, setError] = useState<string | null>(null);
 
   useEffect(() => {
     loadDebitNotes();
@@ -37,10 +38,12 @@ export default function DebitNotesPage() {
 
   const loadDebitNotes = async () => {
     try {
+      setError(null);
       const data = await api.debitNotes.list();
       setDebitNotes(data);
-    } catch (error) {
-      console.error('Failed to load debit notes:', error);
+    } catch (err) {
+      console.error('Failed to load debit notes:', err);
+      setError('Không thể tải danh sách debit note. Vui lòng thử lại.');
     }
   };
 
@@ -94,6 +97,13 @@ export default function DebitNotesPage() {
           Tạo Debit Note
         </button>
       </div>
+
+      {error && (
+        <div className="mb-4 p-3 bg-red-50 border border-red-200 rounded-lg text-red-700 text-sm">
+          {error}
+          <button onClick={loadDebitNotes} className="ml-2 underline hover:no-underline">Thử lại</button>
+        </div>
+      )}
 
       <div className="bg-white rounded-xl shadow-sm overflow-hidden">
         <table className="w-full">

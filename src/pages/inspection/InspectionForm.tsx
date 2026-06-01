@@ -14,7 +14,6 @@ interface Props {
 interface ProductivityRow {
   recordDate: string;
   qcQuantity: number;
-  transitQuantity: number;
   ot: number;
 }
 
@@ -82,7 +81,6 @@ export default function InspectionForm({ onBack, onSaved, editRecord }: Props) {
   const emptyProductivityRow = (): ProductivityRow => ({
     recordDate: new Date().toISOString().split('T')[0],
     qcQuantity: 0,
-    transitQuantity: 0,
     ot: 0,
   });
 
@@ -142,8 +140,8 @@ export default function InspectionForm({ onBack, onSaved, editRecord }: Props) {
       productivity: (editRecord.productivity || []).map(p => ({
         recordDate: p.recordDate ? p.recordDate.split('T')[0] : new Date().toISOString().split('T')[0],
         qcQuantity: p.qcQuantity || 0,
-        transitQuantity: 0,
-        ot: 0,
+        transitQuantity: p.transitQuantity || 0,
+        ot: p.ot || 0,
       })),
     };
   });
@@ -567,24 +565,22 @@ export default function InspectionForm({ onBack, onSaved, editRecord }: Props) {
         };
 
         // Extract per-day productivity data and group by date
-        const productivityByDate: Record<string, { qcQuantity: number; transitQuantity: number; ot: number }> = {};
+        const productivityByDate: Record<string, { qcQuantity: number; ot: number }> = {};
         dataRows.forEach(row => {
           // Skip rows without valid date - prevents fallback to form.inspectionDate
           if (!hasValidDate(row, col.date)) return;
 
           const date = parseDate(getCell(row, col.date));
           if (!productivityByDate[date]) {
-            productivityByDate[date] = { qcQuantity: 0, transitQuantity: 0, ot: 0 };
+            productivityByDate[date] = { qcQuantity: 0, ot: 0 };
           }
           productivityByDate[date].qcQuantity += parseNum(getCell(row, col.qcQty));
-          productivityByDate[date].transitQuantity += parseNum(getCell(row, col.transitHours));
           productivityByDate[date].ot += parseNum(getCell(row, col.otHours));
         });
 
         const productivity = Object.entries(productivityByDate).map(([recordDate, data]) => ({
           recordDate,
           qcQuantity: data.qcQuantity,
-          transitQuantity: data.transitQuantity,
           ot: data.ot,
         }));
 

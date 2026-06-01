@@ -237,7 +237,6 @@ router.post('/', authenticateToken, async (req: Request, res: Response) => {
             factoryId: p.factoryId || null,
             factoryName: p.factoryName || '',
             qcQuantity: p.qcQuantity || 0,
-            transitQuantity: p.transitQuantity || 0,
             ot: p.ot || 0,
           }))
         );
@@ -347,7 +346,6 @@ router.put('/:id', authenticateToken, async (req: Request, res: Response) => {
           factoryId: p.factoryId || null,
           factoryName: p.factoryName || '',
           qcQuantity: p.qcQuantity || 0,
-          transitQuantity: p.transitQuantity || 0,
           ot: p.ot || 0,
         }))
       );
