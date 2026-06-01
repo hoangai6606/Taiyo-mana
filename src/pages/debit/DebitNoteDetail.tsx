@@ -1,6 +1,6 @@
 import { useState, useEffect } from 'react';
 import { api } from '../../lib/api';
-import type { DebitNote, DebitNoteItem, CustomTable } from '../../lib/database.types';
+import type { DebitNote, DebitNoteItem, CustomTable, TravelDayDetail } from '../../lib/database.types';
 import { X, Download } from 'lucide-react';
 import { exportDebitNote } from '../../lib/export-debit-note';
 
@@ -55,7 +55,7 @@ export default function DebitNoteDetail({ debitNoteId, onClose }: Props) {
   const goodsTotal = goodsItems.reduce((s, i) => s + Number(i.lineTotal), 0);
   const qcTotal = qcItems.reduce((s, i) => s + Number(i.lineTotal), 0);
   const otTotal = otItems.reduce((s, i) => s + Number(i.lineTotal), 0);
-  const travel = Number(note.travelAllowance) || 0;
+  const travel = travelDayDetails.length > 0 ? travelDetailsTotal : (Number(note.travelAllowance) || 0);
   const travelDays = Number(note.travelDays) || 0;
   const travelUnitPrice = Number(note.travelUnitPrice) || 0;
   const vehicleCount = Number(note.vehicleCount) || 0;
@@ -63,6 +63,13 @@ export default function DebitNoteDetail({ debitNoteId, onClose }: Props) {
   const travelHoursTime = Number(note.travelHoursTime) || 0;
   const travelHoursUnitPrice = Number(note.travelHoursUnitPrice) || 0;
   const travelHoursTotal = travelHoursQty * travelHoursTime * travelHoursUnitPrice;
+
+  // Parse travel details
+  let travelDayDetails: TravelDayDetail[] = [];
+  try {
+    travelDayDetails = note.travelDetails ? JSON.parse(note.travelDetails) : [];
+  } catch { /* ignore invalid JSON */ }
+  const travelDetailsTotal = travelDayDetails.reduce((sum, d) => sum + d.peopleCount * d.unitPrice * d.vehicleCount, 0);
 
   // Parse custom tables
   let customTables: CustomTable[] = [];
@@ -230,18 +237,54 @@ export default function DebitNoteDetail({ debitNoteId, onClose }: Props) {
             </div>
 
             {/* Travel allowance */}
-            {travel > 0 && (
-              <div className="px-4 py-3 bg-slate-50 rounded-lg">
-                <div className="flex justify-between items-center">
-                  <span className="font-medium text-slate-700">Tiền đi đường:</span>
-                  <span className="font-semibold text-slate-900">{fmt(travel)}</span>
+            {(travel > 0 || travelDayDetails.length > 0) && (
+              travelDayDetails.length > 0 ? (
+                <div>
+                  <h3 className="text-sm font-semibold text-slate-700 mb-2">Tiền đi đường</h3>
+                  <div className="border border-slate-200 rounded-lg overflow-x-auto">
+                    <table className="w-full text-sm">
+                      <thead className="bg-slate-50">
+                        <tr>
+                          <th className="px-3 py-2 text-left font-medium text-slate-600 w-10">STT</th>
+                          <th className="px-3 py-2 text-left font-medium text-slate-600">Ngày</th>
+                          <th className="px-3 py-2 text-right font-medium text-slate-600">Số người</th>
+                          <th className="px-3 py-2 text-right font-medium text-slate-600">Đơn giá</th>
+                          <th className="px-3 py-2 text-right font-medium text-slate-600">Lượng xe</th>
+                          <th className="px-3 py-2 text-right font-medium text-slate-600">Thành tiền</th>
+                        </tr>
+                      </thead>
+                      <tbody>
+                        {travelDayDetails.map((day, idx) => (
+                          <tr key={idx} className="border-t border-slate-100">
+                            <td className="px-3 py-2">{idx + 1}</td>
+                            <td className="px-3 py-2">{new Date(day.date).toLocaleDateString('vi-VN')}</td>
+                            <td className="px-3 py-2 text-right">{fmt(day.peopleCount)}</td>
+                            <td className="px-3 py-2 text-right">{fmt(day.unitPrice)}</td>
+                            <td className="px-3 py-2 text-right">{fmt(day.vehicleCount)}</td>
+                            <td className="px-3 py-2 text-right">{fmt(day.peopleCount * day.unitPrice * day.vehicleCount)}</td>
+                          </tr>
+                        ))}
+                        <tr className="border-t border-slate-200 bg-slate-50">
+                          <td colSpan={5} className="px-3 py-2 text-right font-medium">Tổng tiền đi đường:</td>
+                          <td className="px-3 py-2 text-right font-medium">{fmt(travelDetailsTotal)}</td>
+                        </tr>
+                      </tbody>
+                    </table>
+                  </div>
                 </div>
-                {travelDays > 0 && travelUnitPrice > 0 && vehicleCount > 0 && (
-                  <p className="text-xs text-slate-500 mt-1">
-                    {travelDays} ngày x {fmt(travelUnitPrice)} đ x {fmt(vehicleCount)} xe
-                  </p>
-                )}
-              </div>
+              ) : (
+                <div className="px-4 py-3 bg-slate-50 rounded-lg">
+                  <div className="flex justify-between items-center">
+                    <span className="font-medium text-slate-700">Tiền đi đường:</span>
+                    <span className="font-semibold text-slate-900">{fmt(travel)}</span>
+                  </div>
+                  {travelDays > 0 && travelUnitPrice > 0 && vehicleCount > 0 && (
+                    <p className="text-xs text-slate-500 mt-1">
+                      {travelDays} ngày x {fmt(travelUnitPrice)} đ x {fmt(vehicleCount)} xe
+                    </p>
+                  )}
+                </div>
+              )
             )}
 
             {/* Travel hours */}

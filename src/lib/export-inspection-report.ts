@@ -1,7 +1,7 @@
 import type { InspectionRecord, InspectionItem } from './database.types';
 
 const SIZE_ORDER = ['SS', 'S', 'M', 'L', 'LL', 'EL', '3L', '4L', '5L', '6L', '7L', '8L'];
-const NUM_COLS = 31;
+const NUM_COLS = 29;
 
 // Column indices (0-based)
 export const COL = {
@@ -14,12 +14,11 @@ export const COL = {
   // Tai kiem group (6 cols)
   REINSPECT_QTY: 19, TK_PASSED: 20, TK_FAILED: 21,
   TK_SPEC: 22, TK_ACC: 23, TK_APP: 24,
-  // So luong group (6 cols)
-  ORDER_QTY: 25,
-  PASSED_KK: 26, TOTAL_EXPORT: 27,
-  RATE: 28,
-  ORDER_SL: 29,
-  PARKING_LIST: 30,
+  // So luong group (4 cols)
+  TOTAL_EXPORT: 25,
+  RATE: 26,
+  ORDER_SL: 27,
+  PARKING_LIST: 28,
 };
 
 export interface VRow {
@@ -309,7 +308,7 @@ export async function exportInspectionReportFromGroups(
   h1[COL.SIZE] = 'Size';
   h1[COL.INSPECT_QTY] = 'KIỂM HÀNG';
   h1[COL.REINSPECT_QTY] = 'TÁI KIỂM';
-  h1[COL.ORDER_QTY] = 'Số lượng';
+  h1[COL.TOTAL_EXPORT] = 'Số lượng';
   aoa.push(h1);
 
   // Row 3: Detail headers
@@ -334,8 +333,6 @@ export async function exportInspectionReportFromGroups(
   detailRow[COL.TK_SPEC] = 'Thông số';
   detailRow[COL.TK_ACC] = 'Phụ liệu';
   detailRow[COL.TK_APP] = 'Ngoại quan';
-  detailRow[COL.ORDER_QTY] = 'SL đơn hàng';
-  detailRow[COL.PASSED_KK] = 'SL tổng A';
   detailRow[COL.TOTAL_EXPORT] = 'TỔNG XUẤT';
   detailRow[COL.RATE] = 'Tỉ lệ lỗi';
   detailRow[COL.ORDER_SL] = 'SL order';
@@ -355,8 +352,6 @@ export async function exportInspectionReportFromGroups(
       row[COL.NAME] = g.name;
       row[COL.COLOR] = v.color;
       row[COL.SIZE] = v.size;
-      row[COL.ORDER_QTY] = v.orderQty;
-      row[COL.PASSED_KK] = v.passedKk;
       row[COL.TOTAL_EXPORT] = v.totalExport;
       row[COL.INSPECT_QTY] = v.inspectQty;
       row[COL.PASSED_QTY] = v.passedQty;
@@ -388,8 +383,6 @@ export async function exportInspectionReportFromGroups(
     // Group total row
     const totalRow: any[] = Array(NUM_COLS).fill('');
     totalRow[COL.CODE] = 'Tổng';
-    totalRow[COL.ORDER_QTY] = g.total.orderQty;
-    totalRow[COL.PASSED_KK] = g.total.passedKk;
     totalRow[COL.TOTAL_EXPORT] = g.total.totalExport;
     totalRow[COL.INSPECT_QTY] = g.total.inspectQty;
     totalRow[COL.PASSED_QTY] = g.total.passedQty;
@@ -424,8 +417,6 @@ export async function exportInspectionReportFromGroups(
   const grandTotalRow = rowIdx;
   const grandRow: any[] = Array(NUM_COLS).fill('');
   grandRow[COL.CODE] = 'Tổng Cộng';
-  grandRow[COL.ORDER_QTY] = globalTotal.orderQty;
-  grandRow[COL.PASSED_KK] = globalTotal.passedKk;
   grandRow[COL.TOTAL_EXPORT] = globalTotal.totalExport;
   grandRow[COL.INSPECT_QTY] = globalTotal.inspectQty;
   grandRow[COL.PASSED_QTY] = globalTotal.passedQty;
@@ -474,8 +465,8 @@ export async function exportInspectionReportFromGroups(
     { s: { r: 2, c: COL.INSPECT_QTY }, e: { r: 2, c: COL.METAL } },
     // "TÁI KIỂM" spans REINSPECT_QTY to TK_APP (6 cols)
     { s: { r: 2, c: COL.REINSPECT_QTY }, e: { r: 2, c: COL.TK_APP } },
-    // "So luong" spans ORDER_QTY to PARKING_LIST (6 cols)
-    { s: { r: 2, c: COL.ORDER_QTY }, e: { r: 2, c: COL.PARKING_LIST } },
+    // "So luong" spans TOTAL_EXPORT to PARKING_LIST (4 cols)
+    { s: { r: 2, c: COL.TOTAL_EXPORT }, e: { r: 2, c: COL.PARKING_LIST } },
   ];
 
   // Data merges: product code / brand / name per group (variant rows only)
@@ -501,7 +492,7 @@ export async function exportInspectionReportFromGroups(
     { wch: 10 },
     { wch: 12 }, { wch: 10 }, { wch: 10 },
     { wch: 14 }, { wch: 14 }, { wch: 14 },
-    { wch: 12 }, { wch: 12 }, { wch: 12 }, { wch: 12 },
+    { wch: 12 }, { wch: 12 },
     { wch: 12 }, { wch: 14 },
   ];
 
@@ -516,14 +507,17 @@ export async function exportInspectionReportFromGroups(
   if (productivity && productivity.length > 0) {
     const pAoa: any[][] = [];
 
+    // Total inspected across all groups
+    const totalInspected = groups.reduce((s, g) => s + g.total.inspectQty + g.total.reinspectQty, 0);
+
     // Title
-    pAoa.push(['THEO DÕI NĂNG SUẤT', '', '', '', '']);
+    pAoa.push(['THEO DÕI NĂNG SUẤT', '', '', '', '', '']);
 
     // Info row
-    pAoa.push([`Mã phiếu: ${meta.code}`, '', `Ngày: ${meta.dateStr}`, '', `Nhà máy: ${meta.factoryNames}`]);
+    pAoa.push([`Mã phiếu: ${meta.code}`, '', `Ngày: ${meta.dateStr}`, '', `Nhà máy: ${meta.factoryNames}`, '']);
 
     // Header
-    pAoa.push(['Ngày', 'Nhà máy', 'SL QC', 'SL Chuyển', 'OT']);
+    pAoa.push(['Ngày', 'Nhà máy', 'SL QC', 'SL Chuyển', 'OT', 'Năng suất QC/ngày']);
 
     // Data rows
     let totalQc = 0, totalTransit = 0, totalOt = 0;
@@ -531,16 +525,18 @@ export async function exportInspectionReportFromGroups(
       totalQc += p.qcQuantity || 0;
       totalTransit += p.transitQuantity || 0;
       totalOt += p.ot || 0;
-      pAoa.push([p.recordDate, p.factoryName || '', p.qcQuantity || 0, p.transitQuantity || 0, p.ot || 0]);
+      const qcQty = p.qcQuantity || 0;
+      const ns = qcQty > 0 ? Math.round(totalInspected / qcQty * 100) / 100 : '';
+      pAoa.push([p.recordDate, p.factoryName || '', p.qcQuantity || 0, p.transitQuantity || 0, p.ot || 0, ns]);
     }
 
     // Total row
-    pAoa.push(['Tổng cộng', '', totalQc, totalTransit, totalOt]);
+    pAoa.push(['Tổng cộng', '', totalQc, totalTransit, totalOt, '-']);
 
     const pWs = XLSX.utils.aoa_to_sheet(pAoa);
 
     // Styles for productivity sheet
-    const pCols = 5;
+    const pCols = 6;
     const pBorder = {
       top: { style: 'thin', color: { rgb: '000000' } },
       bottom: { style: 'thin', color: { rgb: '000000' } },
@@ -588,7 +584,7 @@ export async function exportInspectionReportFromGroups(
     ];
 
     pWs['!cols'] = [
-      { wch: 14 }, { wch: 20 }, { wch: 10 }, { wch: 12 }, { wch: 8 },
+      { wch: 14 }, { wch: 20 }, { wch: 10 }, { wch: 12 }, { wch: 8 }, { wch: 18 },
     ];
 
     XLSX.utils.book_append_sheet(wb, pWs, 'Năng Suất');

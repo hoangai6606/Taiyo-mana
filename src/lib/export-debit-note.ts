@@ -1,4 +1,4 @@
-import type { DebitNote, DebitNoteItem, CustomTable } from './database.types';
+import type { DebitNote, DebitNoteItem, CustomTable, TravelDayDetail } from './database.types';
 
 const border = {
   top: { style: 'thin', color: { rgb: '000000' } },
@@ -58,6 +58,14 @@ export async function exportDebitNote(note: DebitNote): Promise<void> {
   const travelHoursUnitPrice = Number(note.travelHoursUnitPrice) || 0;
   const travelHoursTotal = travelHoursQty * travelHoursTime * travelHoursUnitPrice;
 
+  // Parse travel details
+  let travelDayDetails: TravelDayDetail[] = [];
+  try {
+    travelDayDetails = note.travelDetails ? JSON.parse(note.travelDetails) : [];
+  } catch { /* ignore */ }
+  const travelDetailsTotal = travelDayDetails.reduce((sum, d) => sum + d.peopleCount * d.unitPrice * d.vehicleCount, 0);
+  const effectiveTravel = travelDayDetails.length > 0 ? travelDetailsTotal : travel;
+
   // Parse custom tables
   let customTables: CustomTable[] = [];
   try {
@@ -67,7 +75,7 @@ export async function exportDebitNote(note: DebitNote): Promise<void> {
     return total + table.rows.reduce((tableSum, row) => tableSum + row.reduce((product, val) => product * (val || 0), 1), 0);
   }, 0);
 
-  const grandTotal = goodsTotal + qcTotal + otTotal + travel + travelHoursTotal + customTotal;
+  const grandTotal = goodsTotal + qcTotal + otTotal + effectiveTravel + travelHoursTotal + customTotal;
 
   const dateStr = new Date(note.createdAt).toLocaleDateString('vi-VN');
   const aoa: any[][] = [];
@@ -163,12 +171,33 @@ export async function exportDebitNote(note: DebitNote): Promise<void> {
   rowIdx++;
 
   // Travel allowance
-  const travelRow = rowIdx;
-  const travelDesc = travelDays > 0 && travelUnitPrice > 0 && vehicleCount > 0
-    ? `${travelDays} ngày x ${fmt(travelUnitPrice)} đ x ${fmt(vehicleCount)} xe`
-    : '';
-  aoa.push(['Tiền đi đường:', travelDesc || '', '', '', '', travel]);
-  rowIdx++;
+  const travelSectionHeaderRow = rowIdx;
+  const travelDataRows: number[] = [];
+  if (travelDayDetails.length > 0) {
+    aoa.push(['TIỀN ĐI ĐƯỜNG']);
+    rowIdx++;
+    const travelHeaderRow = rowIdx;
+    aoa.push(['STT', 'Ngày', 'Số người', 'Đơn giá', 'Lượng xe', 'Thành tiền']);
+    rowIdx++;
+    for (let i = 0; i < travelDayDetails.length; i++) {
+      const d = travelDayDetails[i];
+      const lineTotal = d.peopleCount * d.unitPrice * d.vehicleCount;
+      aoa.push([i + 1, d.date, d.peopleCount, d.unitPrice, d.vehicleCount, lineTotal]);
+      travelDataRows.push(rowIdx);
+      rowIdx++;
+    }
+    const travelTotalRow = rowIdx;
+    aoa.push(['', 'Tổng tiền đi đường', '', '', '', travelDetailsTotal]);
+    rowIdx++;
+  } else {
+    // Fallback: old single-row format
+    const travelRow = rowIdx;
+    const travelDesc = travelDays > 0 && travelUnitPrice > 0 && vehicleCount > 0
+      ? `${travelDays} ngày x ${fmt(travelUnitPrice)} đ x ${fmt(vehicleCount)} xe`
+      : '';
+    aoa.push(['Tiền đi đường:', travelDesc || '', '', '', '', travel]);
+    rowIdx++;
+  }
 
   // Travel hours
   const travelHoursRow = rowIdx;
@@ -229,13 +258,23 @@ export async function exportDebitNote(note: DebitNote): Promise<void> {
     { s: { r: goodsTotalRow, c: 0 }, e: { r: goodsTotalRow, c: 4 } },
     // QC+OT total: merge first 5 cols
     { s: { r: qcOtTotalRow, c: 0 }, e: { r: qcOtTotalRow, c: 4 } },
-    // Travel row: merge description cols (c1-c4)
-    { s: { r: travelRow, c: 1 }, e: { r: travelRow, c: 4 } },
-    // Travel hours row: merge description cols (c1-c4)
-    { s: { r: travelHoursRow, c: 1 }, e: { r: travelHoursRow, c: 4 } },
-    // Grand total: merge first 5 cols
-    { s: { r: grandRow, c: 0 }, e: { r: grandRow, c: 4 } },
   ];
+
+  if (travelDayDetails.length > 0) {
+    // Travel section header merge
+    merges.push({ s: { r: travelSectionHeaderRow, c: 0 }, e: { r: travelSectionHeaderRow, c: 5 } });
+    // Travel total row merge
+    const travelTotalMergeRow = travelDataRows.length > 0 ? travelDataRows[travelDataRows.length - 1] + 1 : travelSectionHeaderRow + 2;
+    merges.push({ s: { r: travelTotalMergeRow, c: 0 }, e: { r: travelTotalMergeRow, c: 4 } });
+  } else {
+    // Old format: travel row merge
+    merges.push({ s: { r: travelSectionHeaderRow, c: 1 }, e: { r: travelSectionHeaderRow, c: 4 } });
+  }
+
+  // Travel hours row: merge description cols (c1-c4)
+  merges.push({ s: { r: travelHoursRow, c: 1 }, e: { r: travelHoursRow, c: 4 } });
+  // Grand total: merge first 5 cols
+  merges.push({ s: { r: grandRow, c: 0 }, e: { r: grandRow, c: 4 } });
 
   ws['!merges'] = merges;
 
@@ -263,8 +302,10 @@ export async function exportDebitNote(note: DebitNote): Promise<void> {
   }
 
   // Section headers
-  for (const secRow of [goodsHeaderRow, qcHeaderRow]) {
-    const cols = secRow === goodsHeaderRow ? 6 : 10;
+  const sectionHeaderRows = [goodsHeaderRow, qcHeaderRow];
+  if (travelDayDetails.length > 0) sectionHeaderRows.push(travelSectionHeaderRow);
+  for (const secRow of sectionHeaderRows) {
+    const cols = secRow === qcHeaderRow ? 10 : 6;
     for (let c = 0; c < cols; c++) {
       const ref = XLSX.utils.encode_cell({ r: secRow, c });
       if (ws[ref]) ws[ref].s = sectionHeaderStyle;
@@ -272,8 +313,10 @@ export async function exportDebitNote(note: DebitNote): Promise<void> {
   }
 
   // Table header rows
-  for (const hdrRow of [goodsDataStart, qcDataStart]) {
-    const cols = hdrRow === goodsDataStart ? 6 : 10;
+  const tableHeaderRows = [goodsDataStart, qcDataStart];
+  if (travelDayDetails.length > 0) tableHeaderRows.push(travelSectionHeaderRow + 1);
+  for (const hdrRow of tableHeaderRows) {
+    const cols = hdrRow === qcDataStart ? 10 : 6;
     for (let c = 0; c < cols; c++) {
       const ref = XLSX.utils.encode_cell({ r: hdrRow, c });
       if (ws[ref]) ws[ref].s = headerStyle;
@@ -318,13 +361,34 @@ export async function exportDebitNote(note: DebitNote): Promise<void> {
     if (ws[ref]) ws[ref].s = { ...totalStyle, alignment: c >= 4 ? { horizontal: 'right' } : undefined };
   }
 
-  // Travel row
-  const travelRef0 = XLSX.utils.encode_cell({ r: travelRow, c: 0 });
-  const travelRef1 = XLSX.utils.encode_cell({ r: travelRow, c: 1 });
-  const travelRef5 = XLSX.utils.encode_cell({ r: travelRow, c: 5 });
-  if (ws[travelRef0]) ws[travelRef0].s = { font: { bold: true, sz: 11 } };
-  if (ws[travelRef1]) ws[travelRef1].s = { font: { sz: 11 } };
-  if (ws[travelRef5]) ws[travelRef5].s = { font: { bold: true, sz: 11 }, alignment: { horizontal: 'right' } };
+  // Travel data rows (new format)
+  if (travelDayDetails.length > 0) {
+    for (const r of travelDataRows) {
+      for (let c = 0; c < 6; c++) {
+        const ref = XLSX.utils.encode_cell({ r, c });
+        if (ws[ref]) {
+          ws[ref].s = {
+            ...dataStyle,
+            alignment: c >= 2 ? { horizontal: 'right' } : undefined,
+          };
+        }
+      }
+    }
+    // Travel total row
+    const travelTotalStyleRow = travelDataRows.length > 0 ? travelDataRows[travelDataRows.length - 1] + 1 : travelSectionHeaderRow + 2;
+    for (let c = 0; c < 6; c++) {
+      const ref = XLSX.utils.encode_cell({ r: travelTotalStyleRow, c });
+      if (ws[ref]) ws[ref].s = { ...totalStyle, alignment: c === 5 ? { horizontal: 'right' } : undefined };
+    }
+  } else {
+    // Old format: single travel row
+    const travelRef0 = XLSX.utils.encode_cell({ r: travelSectionHeaderRow, c: 0 });
+    const travelRef1 = XLSX.utils.encode_cell({ r: travelSectionHeaderRow, c: 1 });
+    const travelRef5 = XLSX.utils.encode_cell({ r: travelSectionHeaderRow, c: 5 });
+    if (ws[travelRef0]) ws[travelRef0].s = { font: { bold: true, sz: 11 } };
+    if (ws[travelRef1]) ws[travelRef1].s = { font: { sz: 11 } };
+    if (ws[travelRef5]) ws[travelRef5].s = { font: { bold: true, sz: 11 }, alignment: { horizontal: 'right' } };
+  }
 
   // Travel hours row
   const thRef0 = XLSX.utils.encode_cell({ r: travelHoursRow, c: 0 });

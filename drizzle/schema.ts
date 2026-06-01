@@ -239,6 +239,7 @@ export const debitNotes = pgTable('debit_notes', {
   travelHoursQty: numeric('travel_hours_qty').default('0'),
   travelHoursTime: numeric('travel_hours_time').default('0'),
   travelHoursUnitPrice: numeric('travel_hours_unit_price').default('0'),
+  travelDetails: text('travel_details'),
   customData: text('custom_data'),
   workspaceId: text('workspace_id'),
   createdAt: timestamp('created_at', { withTimezone: true }).notNull().defaultNow(),

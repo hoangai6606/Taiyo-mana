@@ -27,7 +27,7 @@ router.get('/', authenticateToken, async (req: Request, res: Response) => {
           dn.unit_price_goods, dn.unit_price_qc, dn.unit_price_ot,
           dn.notes, dn.travel_allowance, dn.travel_days, dn.travel_unit_price,
           dn.vehicle_count, dn.travel_hours_qty, dn.travel_hours_time,
-          dn.travel_hours_unit_price, dn.custom_data, dn.workspace_id,
+          dn.travel_hours_unit_price, dn.travel_details, dn.custom_data, dn.workspace_id,
           dn.created_at, dn.updated_at, dn.created_by,
           di.id as item_id, di.debit_note_id as item_debit_note_id,
           di.product_code as item_product_code, di.size as item_size,
@@ -47,7 +47,7 @@ router.get('/', authenticateToken, async (req: Request, res: Response) => {
           dn.unit_price_goods, dn.unit_price_qc, dn.unit_price_ot,
           dn.notes, dn.travel_allowance, dn.travel_days, dn.travel_unit_price,
           dn.vehicle_count, dn.travel_hours_qty, dn.travel_hours_time,
-          dn.travel_hours_unit_price, dn.custom_data, dn.workspace_id,
+          dn.travel_hours_unit_price, dn.travel_details, dn.custom_data, dn.workspace_id,
           dn.created_at, dn.updated_at, dn.created_by,
           di.id as item_id, di.debit_note_id as item_debit_note_id,
           di.product_code as item_product_code, di.size as item_size,
@@ -84,6 +84,7 @@ router.get('/', authenticateToken, async (req: Request, res: Response) => {
           travelHoursQty: row.travel_hours_qty,
           travelHoursTime: row.travel_hours_time,
           travelHoursUnitPrice: row.travel_hours_unit_price,
+          travelDetails: row.travel_details,
           customData: row.custom_data,
           workspaceId: row.workspace_id,
           createdAt: row.created_at,
@@ -144,6 +145,7 @@ router.get('/:id', async (req: Request, res: Response) => {
         travelHoursQty: debitNotes.travelHoursQty,
         travelHoursTime: debitNotes.travelHoursTime,
         travelHoursUnitPrice: debitNotes.travelHoursUnitPrice,
+        travelDetails: debitNotes.travelDetails,
         customData: debitNotes.customData,
         createdAt: debitNotes.createdAt,
         updatedAt: debitNotes.updatedAt,
@@ -195,7 +197,7 @@ router.get('/:id', async (req: Request, res: Response) => {
 // POST /api/debit-notes - Create a new debit note with items
 router.post('/', authenticateToken, async (req: Request, res: Response) => {
   try {
-    const { customerId, customerName, inspectionRecordId, inspectionReportId, unitPriceGoods, unitPriceQc, unitPriceOt, notes, travelAllowance, travelDays, travelUnitPrice, vehicleCount, travelHoursQty, travelHoursTime, travelHoursUnitPrice, customData, items } = req.body;
+    const { customerId, customerName, inspectionRecordId, inspectionReportId, unitPriceGoods, unitPriceQc, unitPriceOt, notes, travelAllowance, travelDays, travelUnitPrice, vehicleCount, travelHoursQty, travelHoursTime, travelHoursUnitPrice, travelDetails, customData, items } = req.body;
 
     // Generate UUID manually to avoid Neon driver RETURNING bug
     const noteId = crypto.randomUUID();
@@ -275,6 +277,7 @@ router.post('/', authenticateToken, async (req: Request, res: Response) => {
         travelHoursQty: String(travelHoursQty ?? 0),
         travelHoursTime: String(travelHoursTime ?? 0),
         travelHoursUnitPrice: String(travelHoursUnitPrice ?? 0),
+        travelDetails: travelDetails || null,
         customData: customData || null,
         workspaceId,
       });
@@ -327,6 +330,7 @@ router.post('/', authenticateToken, async (req: Request, res: Response) => {
       travelHoursQty,
       travelHoursTime,
       travelHoursUnitPrice,
+      travelDetails,
       customData,
       items,
     });

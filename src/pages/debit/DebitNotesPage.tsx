@@ -1,6 +1,6 @@
 import { useState, useEffect } from 'react';
 import { api } from '../../lib/api';
-import type { DebitNote, InspectionReport, Factory, CustomTable } from '../../lib/database.types';
+import type { DebitNote, InspectionReport, Factory, CustomTable, TravelDayDetail } from '../../lib/database.types';
 import { Plus, X, Eye, Download } from 'lucide-react';
 import DebitNoteDetail from './DebitNoteDetail';
 import { exportDebitNote } from '../../lib/export-debit-note';
@@ -47,7 +47,15 @@ export default function DebitNotesPage() {
   const calcTotal = (note: DebitNote): number => {
     const travelHours = (Number(note.travelHoursQty) || 0) * (Number(note.travelHoursTime) || 0) * (Number(note.travelHoursUnitPrice) || 0);
     const customTotal = calculateCustomTotalFromData(note.customData);
-    return (note.items || []).reduce((sum, i) => sum + Number(i.lineTotal), 0) + Number(note.travelAllowance || 0) + travelHours + customTotal;
+    // Use travelDetails if available, otherwise fallback to travelAllowance
+    let travel = Number(note.travelAllowance || 0);
+    if (note.travelDetails) {
+      try {
+        const details: TravelDayDetail[] = JSON.parse(note.travelDetails);
+        travel = details.reduce((sum, d) => sum + d.peopleCount * d.unitPrice * d.vehicleCount, 0);
+      } catch { /* ignore */ }
+    }
+    return (note.items || []).reduce((sum, i) => sum + Number(i.lineTotal), 0) + travel + travelHours + customTotal;
   };
 
   const calculateCustomTotalFromData = (customData?: string | null): number => {
@@ -158,10 +166,9 @@ function CreateModal({ onClose, onCreated }: { onClose: () => void; onCreated: (
   const [qcPriceMap, setQcPriceMap] = useState<Map<string, number>>(new Map());
   const [otPriceMap, setOtPriceMap] = useState<Map<string, number>>(new Map());
   const [notes, setNotes] = useState<string>('');
-  const [travelDays, setTravelDays] = useState<number>(0);
-  const [travelUnitPrice, setTravelUnitPrice] = useState<number>(0);
-  const [vehicleCount, setVehicleCount] = useState<number>(0);
-  const travelAllowance = travelDays * travelUnitPrice * vehicleCount;
+  const [travelDetails, setTravelDetails] = useState<TravelDayDetail[]>([]);
+  const travelAllowance = travelDetails.reduce((sum, d) => sum + d.peopleCount * d.unitPrice * d.vehicleCount, 0);
+  const travelDays = travelDetails.length;
   const [travelHoursQty, setTravelHoursQty] = useState<number>(0);
   const [travelHoursTime, setTravelHoursTime] = useState<number>(0);
   const [travelHoursUnitPrice, setTravelHoursUnitPrice] = useState<number>(0);
@@ -206,23 +213,27 @@ function CreateModal({ onClose, onCreated }: { onClose: () => void; onCreated: (
       setSelectedFactoryId('');
       setDisplayedFactoryName('');
       setSelectedFactory(null);
-      setTravelDays(0);
-      setTravelUnitPrice(0);
-      setVehicleCount(0);
+      setTravelDetails([]);
       return;
     }
     try {
       const report = await api.inspectionReports.getById(id);
       setSelectedReport(report);
 
-      // Auto-count distinct inspection dates from report items
+      // Auto-populate travel details from distinct inspection dates
       const distinctDates = new Set<string>();
       for (const item of (report.items || [])) {
         if (item.inspectionDate) {
           distinctDates.add(new Date(item.inspectionDate).toISOString().split('T')[0]);
         }
       }
-      setTravelDays(distinctDates.size);
+      const sortedDates = Array.from(distinctDates).sort();
+      setTravelDetails(sortedDates.map(date => ({
+        date,
+        peopleCount: 0,
+        unitPrice: 0,
+        vehicleCount: 0,
+      })));
 
       // Parse factoryNames (comma-separated text) instead of JSON array
       const factoryNames = (report.factoryNames || '').split(',').map(s => s.trim()).filter(Boolean);
@@ -548,11 +559,12 @@ function CreateModal({ onClose, onCreated }: { onClose: () => void; onCreated: (
         notes,
         travelAllowance,
         travelDays,
-        travelUnitPrice,
-        vehicleCount,
+        travelUnitPrice: 0,
+        vehicleCount: 0,
         travelHoursQty,
         travelHoursTime,
         travelHoursUnitPrice,
+        travelDetails: travelDetails.length > 0 ? JSON.stringify(travelDetails) : null,
         customData: customTables.length > 0 ? JSON.stringify(customTables) : null,
         items,
       });
@@ -632,46 +644,70 @@ function CreateModal({ onClose, onCreated }: { onClose: () => void; onCreated: (
 
                 {/* Tiền đi đường */}
                 <div>
-                  <label className="block text-sm font-medium text-slate-700 mb-1">Tiền đi đường</label>
-                  <div className="grid grid-cols-4 gap-3">
-                    <div>
-                      <label className="block text-xs text-slate-500 mb-1">Số ngày đi</label>
-                      <input
-                        type="number"
-                        value={travelDays}
-                        readOnly
-                        className="w-full px-3 py-2 border border-slate-200 bg-slate-50 rounded-lg text-slate-700"
-                      />
-                    </div>
-                    <div>
-                      <label className="block text-xs text-slate-500 mb-1">Đơn giá</label>
-                      <NumberInput
-                        value={travelUnitPrice}
-                        onChange={setTravelUnitPrice}
-                        className="w-full px-3 py-2 border border-slate-300 rounded-lg focus:outline-none focus:ring-2 focus:ring-blue-500"
-                      />
-                    </div>
-                    <div>
-                      <label className="block text-xs text-slate-500 mb-1">Lượng xe</label>
-                      <NumberInput
-                        value={vehicleCount}
-                        onChange={setVehicleCount}
-                        className="w-full px-3 py-2 border border-slate-300 rounded-lg focus:outline-none focus:ring-2 focus:ring-blue-500"
-                      />
-                    </div>
-                    <div>
-                      <label className="block text-xs text-slate-500 mb-1">Thành tiền</label>
-                      <input
-                        type="text"
-                        value={travelAllowance.toLocaleString('vi-VN')}
-                        readOnly
-                        className="w-full px-3 py-2 border border-slate-200 bg-slate-50 rounded-lg text-slate-700 font-medium"
-                      />
-                    </div>
+                  <label className="block text-sm font-medium text-slate-700 mb-2">Tiền đi đường</label>
+                  <div className="border border-slate-200 rounded-lg overflow-hidden">
+                    <table className="w-full text-sm">
+                      <thead className="bg-slate-50">
+                        <tr>
+                          <th className="px-3 py-2 text-left font-medium text-slate-600">Ngày</th>
+                          <th className="px-3 py-2 text-right font-medium text-slate-600">Số người</th>
+                          <th className="px-3 py-2 text-right font-medium text-slate-600">Đơn giá</th>
+                          <th className="px-3 py-2 text-right font-medium text-slate-600">Lượng xe</th>
+                          <th className="px-3 py-2 text-right font-medium text-slate-600">Thành tiền</th>
+                        </tr>
+                      </thead>
+                      <tbody>
+                        {travelDetails.map((day, idx) => {
+                          const lineTotal = day.peopleCount * day.unitPrice * day.vehicleCount;
+                          return (
+                            <tr key={idx} className="border-t border-slate-100">
+                              <td className="px-3 py-2">{new Date(day.date).toLocaleDateString('vi-VN')}</td>
+                              <td className="px-3 py-2 text-right">
+                                <NumberInput
+                                  value={day.peopleCount}
+                                  onChange={(val) => {
+                                    setTravelDetails(prev => prev.map((d, i) => i === idx ? { ...d, peopleCount: val } : d));
+                                  }}
+                                  className="w-20 px-2 py-1 border border-slate-300 rounded text-right text-sm focus:outline-none focus:ring-1 focus:ring-blue-500"
+                                  min={0}
+                                />
+                              </td>
+                              <td className="px-3 py-2 text-right">
+                                <NumberInput
+                                  value={day.unitPrice}
+                                  onChange={(val) => {
+                                    setTravelDetails(prev => prev.map((d, i) => i === idx ? { ...d, unitPrice: val } : d));
+                                  }}
+                                  className="w-24 px-2 py-1 border border-slate-300 rounded text-right text-sm focus:outline-none focus:ring-1 focus:ring-blue-500"
+                                  min={0}
+                                />
+                              </td>
+                              <td className="px-3 py-2 text-right">
+                                <NumberInput
+                                  value={day.vehicleCount}
+                                  onChange={(val) => {
+                                    setTravelDetails(prev => prev.map((d, i) => i === idx ? { ...d, vehicleCount: val } : d));
+                                  }}
+                                  className="w-20 px-2 py-1 border border-slate-300 rounded text-right text-sm focus:outline-none focus:ring-1 focus:ring-blue-500"
+                                  min={0}
+                                />
+                              </td>
+                              <td className="px-3 py-2 text-right font-medium">{lineTotal.toLocaleString('vi-VN')}</td>
+                            </tr>
+                          );
+                        })}
+                        {travelDetails.length === 0 && (
+                          <tr>
+                            <td colSpan={5} className="px-3 py-4 text-center text-slate-400">Chưa có ngày đi đường</td>
+                          </tr>
+                        )}
+                        <tr className="border-t border-slate-200 bg-slate-50">
+                          <td colSpan={4} className="px-3 py-2 text-right font-medium">Tổng tiền đi đường:</td>
+                          <td className="px-3 py-2 text-right font-medium">{travelAllowance.toLocaleString('vi-VN')}</td>
+                        </tr>
+                      </tbody>
+                    </table>
                   </div>
-                  <p className="text-xs text-slate-400 mt-1">
-                    {travelDays} ngày x {travelUnitPrice.toLocaleString('vi-VN')} đ x {vehicleCount} xe = {travelAllowance.toLocaleString('vi-VN')}
-                  </p>
                 </div>
 
                 {/* Giờ đi đường */}

@@ -116,10 +116,8 @@ export default function ReportDetail({ report, onBack }: Props) {
     return new Date(d).toLocaleDateString('vi-VN');
   };
 
-  // End group fields (6 cols) — "Số lượng" at the end
+  // End group fields (4 cols) — "Số lượng" at the end
   const endFields: { id: string; key: keyof VRow; label: string }[] = [
-    { id: 'orderQty', key: 'orderQty', label: 'SL đơn hàng' },
-    { id: 'passedKk', key: 'passedKk', label: 'SL tổng A' },
     { id: 'totalExport', key: 'totalExport', label: 'TỔNG XUẤT' },
     { id: 'rate', key: 'rate', label: 'Tỉ lệ lỗi' },
     { id: 'orderSl', key: 'orderSl', label: 'SL order' },
@@ -209,7 +207,7 @@ export default function ReportDetail({ report, onBack }: Props) {
                   <th className="border border-slate-400 px-2 py-1.5 text-center font-bold align-middle" rowSpan={2}>Size</th>
                   <th className="border border-slate-400 px-2 py-1 text-center font-bold" colSpan={14}>KIỂM HÀNG</th>
                   <th className="border border-[#E97451] px-2 py-1 text-center font-bold" colSpan={6}>TÁI KIỂM</th>
-                  <th className="border border-slate-400 px-2 py-1 text-center font-bold" colSpan={6}>Số lượng</th>
+                  <th className="border border-slate-400 px-2 py-1 text-center font-bold" colSpan={4}>Số lượng</th>
                 </tr>
                 {/* Detail header row */}
                 <tr className="bg-[#4472C4] text-white">
@@ -254,8 +252,6 @@ export default function ReportDetail({ report, onBack }: Props) {
                   {reinspectTextFields.map(f => (
                     <td key={f.key} className="border border-slate-300 px-2 py-1">{grandTotal[f.key]}</td>
                   ))}
-                  <td className="border border-slate-300 px-2 py-1 text-right">{grandTotal.orderQty}</td>
-                  <td className="border border-slate-300 px-2 py-1 text-right">{grandTotal.passedKk}</td>
                   <td className="border border-slate-300 px-2 py-1 text-right">{grandTotal.totalExport}</td>
                   <td className="border border-slate-300 px-2 py-1 text-right">{grandTotal.rate}</td>
                   <td className="border border-slate-300 px-2 py-1 text-right">{grandTotal.orderSl}</td>
@@ -282,18 +278,24 @@ export default function ReportDetail({ report, onBack }: Props) {
                   <th className="text-right px-3 py-2 font-medium text-slate-600">SL QC</th>
                   <th className="text-right px-3 py-2 font-medium text-slate-600">SL Chuyển</th>
                   <th className="text-right px-3 py-2 font-medium text-slate-600">OT</th>
+                  <th className="text-right px-3 py-2 font-medium text-slate-600">Năng suất QC/ngày</th>
                 </tr>
               </thead>
               <tbody>
-                {report.productivity.map(p => (
-                  <tr key={p.id} className="border-b border-slate-100 hover:bg-slate-50">
-                    <td className="px-3 py-2">{formatDate(p.recordDate)}</td>
-                    <td className="px-3 py-2">{p.factoryName || '-'}</td>
-                    <td className="px-3 py-2 text-right">{p.qcQuantity}</td>
-                    <td className="px-3 py-2 text-right">{p.transitQuantity}</td>
-                    <td className="px-3 py-2 text-right">{p.ot}</td>
-                  </tr>
-                ))}
+                {report.productivity.map(p => {
+                  const inspectTotal = grandTotal.inspectQty + grandTotal.reinspectQty;
+                  const qcQty = p.qcQuantity || 0;
+                  return (
+                    <tr key={p.id} className="border-b border-slate-100 hover:bg-slate-50">
+                      <td className="px-3 py-2">{formatDate(p.recordDate)}</td>
+                      <td className="px-3 py-2">{p.factoryName || '-'}</td>
+                      <td className="px-3 py-2 text-right">{p.qcQuantity}</td>
+                      <td className="px-3 py-2 text-right">{p.transitQuantity}</td>
+                      <td className="px-3 py-2 text-right">{p.ot}</td>
+                      <td className="px-3 py-2 text-right">{qcQty > 0 ? Math.round(inspectTotal / qcQty * 100) / 100 : '-'}</td>
+                    </tr>
+                  );
+                })}
               </tbody>
               <tfoot>
                 <tr className="bg-slate-100 font-medium">
@@ -301,6 +303,7 @@ export default function ReportDetail({ report, onBack }: Props) {
                   <td className="px-3 py-2 text-right">{report.productivity.reduce((s, p) => s + (p.qcQuantity || 0), 0)}</td>
                   <td className="px-3 py-2 text-right">{report.productivity.reduce((s, p) => s + (p.transitQuantity || 0), 0)}</td>
                   <td className="px-3 py-2 text-right">{report.productivity.reduce((s, p) => s + (p.ot || 0), 0)}</td>
+                  <td className="px-3 py-2 text-right">-</td>
                 </tr>
               </tfoot>
             </table>
@@ -377,8 +380,6 @@ function ReportGroup({
             </td>
           ))}
           {/* So luong group — end columns */}
-          <td className="border border-slate-300 px-2 py-1 text-right">{v.orderQty}</td>
-          <td className="border border-slate-300 px-2 py-1 text-right">{v.passedKk}</td>
           <td className="border border-slate-300 px-1 py-0.5">
             <NumberInput
               value={Number(v.totalExport) || 0}
@@ -404,8 +405,6 @@ function ReportGroup({
         {reinspectTextFields.map(f => (
           <td key={f.key} className="border border-orange-200 px-2 py-1">{group.total[f.key]}</td>
         ))}
-        <td className="border border-slate-300 px-2 py-1 text-right">{group.total.orderQty}</td>
-        <td className="border border-slate-300 px-2 py-1 text-right">{group.total.passedKk}</td>
         <td className="border border-slate-300 px-2 py-1 text-right">{group.total.totalExport}</td>
         <td className="border border-slate-300 px-2 py-1 text-right">{group.total.rate}</td>
         <td className="border border-slate-300 px-2 py-1 text-right">{group.total.orderSl}</td>

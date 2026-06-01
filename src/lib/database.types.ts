@@ -228,6 +228,13 @@ export interface CustomTable {
   rows: number[][];
 }
 
+export interface TravelDayDetail {
+  date: string;
+  peopleCount: number;
+  unitPrice: number;
+  vehicleCount: number;
+}
+
 export interface DebitNote {
   id: string;
   debitNo: string;
@@ -246,6 +253,7 @@ export interface DebitNote {
   travelHoursQty?: number;
   travelHoursTime?: number;
   travelHoursUnitPrice?: number;
+  travelDetails?: string | null;
   customData?: string | null;
   createdAt: string;
   updatedAt: string;
