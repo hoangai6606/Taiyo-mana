@@ -109,7 +109,7 @@ export async function exportDebitNote(note: DebitNote): Promise<void> {
   }
 
   const goodsTotalRow = rowIdx;
-  aoa.push(['', 'Tổng hàng hóa', '', '', '', goodsTotal]);
+  aoa.push(['', 'Tổng cộng', '', '', '', goodsTotal]);
   rowIdx++;
 
   // Row: empty
@@ -163,7 +163,7 @@ export async function exportDebitNote(note: DebitNote): Promise<void> {
   }
 
   const qcOtTotalRow = rowIdx;
-  aoa.push(['', 'Tổng', '', '', '', qcTotal, '', '', '', otTotal]);
+  aoa.push(['', 'Tổng cộng', '', '', '', qcTotal, '', '', '', otTotal]);
   rowIdx++;
 
   // Row: empty
@@ -187,7 +187,7 @@ export async function exportDebitNote(note: DebitNote): Promise<void> {
       rowIdx++;
     }
     const travelTotalRow = rowIdx;
-    aoa.push(['', 'Tổng tiền đi đường', '', '', '', travelDetailsTotal]);
+    aoa.push(['', 'Tổng cộng', '', '', '', travelDetailsTotal]);
     rowIdx++;
   } else {
     // Fallback: old single-row format
@@ -199,12 +199,21 @@ export async function exportDebitNote(note: DebitNote): Promise<void> {
     rowIdx++;
   }
 
-  // Travel hours
-  const travelHoursRow = rowIdx;
-  const travelHoursDesc = travelHoursQty > 0 && travelHoursTime > 0 && travelHoursUnitPrice > 0
-    ? `${fmt(travelHoursQty)} SL x ${fmt(travelHoursTime)} tg x ${fmt(travelHoursUnitPrice)} đ`
-    : '';
-  aoa.push(['Giờ đi đường:', travelHoursDesc || '', '', '', '', travelHoursTotal]);
+  // Travel hours - proper table format
+  aoa.push(['GIỜ ĐI ĐƯỜNG']);
+  const travelHoursSectionRow = rowIdx;
+  rowIdx++;
+
+  const travelHoursHeaderRow = rowIdx;
+  aoa.push(['STT', 'Số lượng', 'Thời gian', 'Đơn giá', '', 'Thành tiền']);
+  rowIdx++;
+
+  const travelHoursDataRow = rowIdx;
+  aoa.push([1, travelHoursQty, travelHoursTime, travelHoursUnitPrice, '', travelHoursTotal]);
+  rowIdx++;
+
+  const travelHoursTotalRow = rowIdx;
+  aoa.push(['', 'Tổng cộng', '', '', '', travelHoursTotal]);
   rowIdx++;
 
   // Custom tables
@@ -230,7 +239,7 @@ export async function exportDebitNote(note: DebitNote): Promise<void> {
 
     // Total row
     const totalRowArr = Array(table.columnNames.length).fill('');
-    totalRowArr.unshift('', 'Tổng');
+    totalRowArr.unshift('', 'Tổng cộng');
     totalRowArr.push(tableTotal);
     aoa.push(totalRowArr);
     rowIdx++;
@@ -271,8 +280,10 @@ export async function exportDebitNote(note: DebitNote): Promise<void> {
     merges.push({ s: { r: travelSectionHeaderRow, c: 1 }, e: { r: travelSectionHeaderRow, c: 4 } });
   }
 
-  // Travel hours row: merge description cols (c1-c4)
-  merges.push({ s: { r: travelHoursRow, c: 1 }, e: { r: travelHoursRow, c: 4 } });
+  // Travel hours section header merge
+  merges.push({ s: { r: travelHoursSectionRow, c: 0 }, e: { r: travelHoursSectionRow, c: 5 } });
+  // Travel hours total row merge
+  merges.push({ s: { r: travelHoursTotalRow, c: 0 }, e: { r: travelHoursTotalRow, c: 4 } });
   // Grand total: merge first 5 cols
   merges.push({ s: { r: grandRow, c: 0 }, e: { r: grandRow, c: 4 } });
 
@@ -304,6 +315,7 @@ export async function exportDebitNote(note: DebitNote): Promise<void> {
   // Section headers
   const sectionHeaderRows = [goodsHeaderRow, qcHeaderRow];
   if (travelDayDetails.length > 0) sectionHeaderRows.push(travelSectionHeaderRow);
+  sectionHeaderRows.push(travelHoursSectionRow);
   for (const secRow of sectionHeaderRows) {
     const cols = secRow === qcHeaderRow ? 10 : 6;
     for (let c = 0; c < cols; c++) {
@@ -315,6 +327,7 @@ export async function exportDebitNote(note: DebitNote): Promise<void> {
   // Table header rows
   const tableHeaderRows = [goodsDataStart, qcDataStart];
   if (travelDayDetails.length > 0) tableHeaderRows.push(travelSectionHeaderRow + 1);
+  tableHeaderRows.push(travelHoursHeaderRow);
   for (const hdrRow of tableHeaderRows) {
     const cols = hdrRow === qcDataStart ? 10 : 6;
     for (let c = 0; c < cols; c++) {
@@ -390,13 +403,22 @@ export async function exportDebitNote(note: DebitNote): Promise<void> {
     if (ws[travelRef5]) ws[travelRef5].s = { font: { bold: true, sz: 11 }, alignment: { horizontal: 'right' } };
   }
 
-  // Travel hours row
-  const thRef0 = XLSX.utils.encode_cell({ r: travelHoursRow, c: 0 });
-  const thRef1 = XLSX.utils.encode_cell({ r: travelHoursRow, c: 1 });
-  const thRef5 = XLSX.utils.encode_cell({ r: travelHoursRow, c: 5 });
-  if (ws[thRef0]) ws[thRef0].s = { font: { bold: true, sz: 11 } };
-  if (ws[thRef1]) ws[thRef1].s = { font: { sz: 11 } };
-  if (ws[thRef5]) ws[thRef5].s = { font: { bold: true, sz: 11 }, alignment: { horizontal: 'right' } };
+  // Travel hours data row
+  for (let c = 0; c < 6; c++) {
+    const ref = XLSX.utils.encode_cell({ r: travelHoursDataRow, c });
+    if (ws[ref]) {
+      ws[ref].s = {
+        ...dataStyle,
+        alignment: c >= 1 ? { horizontal: 'right' } : undefined,
+      };
+    }
+  }
+
+  // Travel hours total row
+  for (let c = 0; c < 6; c++) {
+    const ref = XLSX.utils.encode_cell({ r: travelHoursTotalRow, c });
+    if (ws[ref]) ws[ref].s = { ...totalStyle, alignment: c === 5 ? { horizontal: 'right' } : undefined };
+  }
 
   // Grand total row
   for (let c = 0; c < maxCol; c++) {

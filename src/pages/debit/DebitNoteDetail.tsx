@@ -55,16 +55,8 @@ export default function DebitNoteDetail({ debitNoteId, onClose }: Props) {
   const goodsTotal = goodsItems.reduce((s, i) => s + Number(i.lineTotal), 0);
   const qcTotal = qcItems.reduce((s, i) => s + Number(i.lineTotal), 0);
   const otTotal = otItems.reduce((s, i) => s + Number(i.lineTotal), 0);
-  const travel = travelDayDetails.length > 0 ? travelDetailsTotal : (Number(note.travelAllowance) || 0);
-  const travelDays = Number(note.travelDays) || 0;
-  const travelUnitPrice = Number(note.travelUnitPrice) || 0;
-  const vehicleCount = Number(note.vehicleCount) || 0;
-  const travelHoursQty = Number(note.travelHoursQty) || 0;
-  const travelHoursTime = Number(note.travelHoursTime) || 0;
-  const travelHoursUnitPrice = Number(note.travelHoursUnitPrice) || 0;
-  const travelHoursTotal = travelHoursQty * travelHoursTime * travelHoursUnitPrice;
 
-  // Parse travel details
+  // Parse travel details first (used below)
   let travelDayDetails: TravelDayDetail[] = [];
   try {
     travelDayDetails = note.travelDetails ? JSON.parse(note.travelDetails) : [];
@@ -79,6 +71,16 @@ export default function DebitNoteDetail({ debitNoteId, onClose }: Props) {
   const customTotal = customTables.reduce((total, table) => {
     return total + table.rows.reduce((tableSum, row) => tableSum + row.reduce((product, val) => product * (val || 0), 1), 0);
   }, 0);
+
+  // Now safe to use travelDayDetails
+  const travel = travelDayDetails.length > 0 ? travelDetailsTotal : (Number(note.travelAllowance) || 0);
+  const travelDays = Number(note.travelDays) || 0;
+  const travelUnitPrice = Number(note.travelUnitPrice) || 0;
+  const vehicleCount = Number(note.vehicleCount) || 0;
+  const travelHoursQty = Number(note.travelHoursQty) || 0;
+  const travelHoursTime = Number(note.travelHoursTime) || 0;
+  const travelHoursUnitPrice = Number(note.travelHoursUnitPrice) || 0;
+  const travelHoursTotal = travelHoursQty * travelHoursTime * travelHoursUnitPrice;
 
   const grandTotal = goodsTotal + qcTotal + otTotal + travel + travelHoursTotal + customTotal;
 
